@@ -26,20 +26,36 @@ data = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seu
 data.scaled = data@assays$RNA@scale.data
 data.scaled = data@assays$RNA@data
 data.plot = data.frame("Gene" = data.scaled["SLC9B2",], 
-                       "Celltype" = data@meta.data$subclass.l1,
-                       "Cellclass" = data@meta.data$class,
-                       "Disease" = data@meta.data$condition.l1) %>%
-  group_by(Disease, Celltype, Cellclass) %>% dplyr::summarize(Expression = mean(Gene), Percentage = sum(Gene>0)/n()) %>%
-  mutate(Product = Expression*Percentage)
-
-# DotPlot(data, features = "SLC9B2", split.by = "condition.l2")
+           "Celltype" = data@meta.data$subclass.l1,
+           "Cellclass" = data@meta.data$class,
+           "Disease" = data@meta.data$condition.l1,
+           "Patient" = data@meta.data$patient) %>%
+  group_by(Disease) %>% dplyr::mutate(Disease = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
+  group_by(Celltype) %>% dplyr::mutate(Celltype = paste0(Celltype, " (", length(Gene), ")")) %>%
+  group_by(Disease, Celltype, Cellclass) %>% dplyr::summarize(Expression = mean(Gene), Percentage = sum(Gene>0)/n())
 
 ggplot(data.plot, aes(x = Disease, y = Celltype)) +
   geom_point(aes(size = Percentage, col = Expression)) +
   scale_size_continuous(labels = scales::percent, limits = c(0.0000001, max(data.plot$Percentage))) +
-  scale_color_viridis(option = "E") +
+  scale_color_viridis() +
   facet_grid(Cellclass ~ ., scales = "free_y", space = "free") +
   theme_bw()
+
+data.plot = data.frame("Gene" = data.scaled["SLC9B2",], 
+                       "Celltype" = data@meta.data$subclass.l1,
+                       "Cellclass" = data@meta.data$class,
+                       "Disease" = data@meta.data$condition.l1,
+                       "Patient" = data@meta.data$patient) %>%
+  group_by(Disease) %>% dplyr::mutate(Disease = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
+  group_by(Celltype) %>% dplyr::mutate(Celltype = paste0(Celltype, " (", length(Gene), ")"))
+
+ggplot(data.plot, aes(x = Gene, y = Celltype)) +
+  geom_violin(aes(fill = Disease)) +
+  scale_x_continuous(expand = c(0,0)) +
+  # scale_color_viridis() +
+  facet_grid(Cellclass ~ ., scales = "free_y", space = "free") +
+  theme_bw()
+
 unique(data@meta.data$condition.l2)
 
 DimPlot(data, reduction = "ref.umap")

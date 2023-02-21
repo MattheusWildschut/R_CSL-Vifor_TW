@@ -57,21 +57,40 @@ server = function(input, output, session) {
   })
   updateSelectizeInput(session, "gene", choices = sort(rownames(data@assays$RNA@data)), 
                        selected = "SLC9B2", options = list(maxOptions = 100000), server = TRUE)
+  # data.plot = reactive({
   output$dotplot = renderPlot({
     req(input$gene)
-    data.plot = data.frame("Gene" = data@assays$RNA@data[input$gene,], #["SLC9B2",], #
+    data.plot = data.frame("Expression" = data@assays$RNA@data[input$gene,], #["SLC9B2",], #
                            "Disease" = data@meta.data[,input$pat.grouping], #[,"condition.l1"], #
                            "Celltype" = data@meta.data[,input$cell.grouping], #[,"subclass.l1"], #
-                           "Cellclass" = data@meta.data$class) %>%
-      group_by(Disease, Celltype, Cellclass) %>% dplyr::summarize(Expression = mean(Gene), Percentage = sum(Gene>0)/n())
-    
-    ggplot(data.plot, aes(x = Disease, y = Celltype)) +
+                           "Cellclass" = data@meta.data$class,
+                           "Patient" = data@meta.data$patient) %>%
+      group_by(Disease) %>% dplyr::mutate(Disease = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
+      group_by(Celltype) %>% dplyr::mutate(Celltype = paste0(Celltype, " (", length(Expression), ")"))
+    data.sum = data.plot %>%
+      group_by(Disease, Celltype, Cellclass) %>% dplyr::summarize(Expression = mean(Expression), Percentage = sum(Expression>0)/n())
+
+    dot.plot = ggplot(data.sum, aes(x = Disease, y = Celltype)) +
       geom_point(aes(size = Percentage, col = Expression)) +
-      {if(input$cell.class) facet_grid(Cellclass ~ ., scales = "free_y", space = "free", switch = "y")} + #if(input$cell.class)
-      scale_size_continuous(labels = scales::percent, limits = c(0.0000001, max(data.plot$Percentage))) +
-      scale_color_viridis(op) +
-      theme_bw() + theme(text = element_text(size = 18), strip.text.y.left = element_text(angle = 0))
+      {if(input$cell.class) facet_grid(Cellclass ~ ., scales = "free_y", space = "free", switch = "y")} +
+      scale_size_continuous(labels = scales::percent, limits = c(0.0000001, max(data.sum$Percentage))) +
+      scale_color_viridis() +
+      theme_bw() + theme(text = element_text(size = 18), strip.text.y.left = element_text(angle = 0), legend.position = "bottom")
+    
+    violin.plot = ggplot(data.plot, aes(x = Expression, y = Celltype)) +
+      geom_violin(aes(fill = Disease)) +
+      scale_x_continuous(expand = c(0,0)) +
+      {if(input$cell.class) facet_grid(Cellclass ~ ., scales = "free_y", space = "free", switch = "y")} +
+      theme_bw() + theme(text = element_text(size = 18), legend.position = "bottom", axis.text.y = element_blank(), axis.title.y = element_blank(),
+                         strip.background = element_blank(), strip.text.y = element_blank())
+    
+    dot.plot + violin.plot
   })
+  # output$dotplot = renderPlot({
+    
+  # })
+  
+  
   # Dotplot Server -----------
 }
 
