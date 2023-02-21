@@ -12,15 +12,37 @@ library(SeuratDisk)
 
 data = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seurat_03282022.h5Seurat",
                     assays = list(RNA = "data"))
-all.genes <- rownames(data)
-data <- ScaleData(data, features = all.genes)
+# data <- subset(data, subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
+# all.genes <- rownames(data)
+# gc()
+# rm(data)
+# data <- ScaleData(data, features = all.genes)
+# data <- ScaleData(LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seurat_03282022.h5Seurat",
+#                                assays = list(RNA = "data")), features = all.genes)
+# saveRDS(data, "Input\\GSE183276_KPMP_Healthy-Injury_Scaled.rds")
+# data = readRDS("Input\\GSE183276_KPMP_Healthy-Injury_Scaled.rds")
+
+
+data.scaled = data@assays$RNA@scale.data
+data.scaled = data@assays$RNA@data
+data.plot = data.frame("Gene" = data.scaled["SLC9B2",], 
+                       "Celltype" = data@meta.data$subclass.l1,
+                       "Cellclass" = data@meta.data$class,
+                       "Disease" = data@meta.data$condition.l1) %>%
+  group_by(Disease, Celltype, Cellclass) %>% dplyr::summarize(Expression = mean(Gene), Percentage = sum(Gene>0)/n()) %>%
+  mutate(Product = Expression*Percentage)
+
+# DotPlot(data, features = "SLC9B2", split.by = "condition.l2")
+
+ggplot(data.plot, aes(x = Disease, y = Celltype)) +
+  geom_point(aes(size = Percentage, col = Expression)) +
+  scale_size_continuous(labels = scales::percent, limits = c(0.0000001, max(data.plot$Percentage))) +
+  scale_color_viridis(option = "E") +
+  facet_grid(Cellclass ~ ., scales = "free_y", space = "free") +
+  theme_bw()
+unique(data@meta.data$condition.l2)
 
 DimPlot(data, reduction = "ref.umap")
-VlnPlot(data, features = c("S100A9"))
-
-usethis::edit_r_environ()
-
-
 
 # DimPlot(object = reference, reduction = "wnn.umap", group.by = "celltype.l2", label = TRUE, label.size = 3, repel = TRUE) + NoLegend()
 
