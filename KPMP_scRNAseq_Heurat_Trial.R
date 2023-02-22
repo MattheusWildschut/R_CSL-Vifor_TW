@@ -10,6 +10,7 @@ source("SourceFile_TW.R")
 library(Seurat)
 library(SeuratDisk)
 
+
 data = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seurat_03282022.h5Seurat",
                     assays = list(RNA = "data"))
 # data <- subset(data, subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
@@ -22,18 +23,42 @@ data = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seu
 # saveRDS(data, "Input\\GSE183276_KPMP_Healthy-Injury_Scaled.rds")
 # data = readRDS("Input\\GSE183276_KPMP_Healthy-Injury_Scaled.rds")
 
-
-data.scaled = data@assays$RNA@scale.data
-data.scaled = data@assays$RNA@data
-data.plot = data.frame("Gene" = data.scaled["SLC9B2",], 
-           "Celltype" = data@meta.data$subclass.l1,
+# Explore data & load
+# hfile = Connect("Input\\521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat")
+# hfile$index()
+# data = LoadH5Seurat("Input\\521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat")
+data <- subset(data, subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
+# data.scaled = data@assays$RNA@scale.data
+data.matrix = data@assays$RNA@data
+data.plot = data.frame("Expression" = data.matrix["P2RY14",],
+           "Celltype" = data@meta.data$subclass.l2,
            "Cellclass" = data@meta.data$class,
            "Disease" = data@meta.data$condition.l1,
            "Patient" = data@meta.data$patient) %>%
   group_by(Disease) %>% dplyr::mutate(Disease = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
-  group_by(Celltype) %>% dplyr::mutate(Celltype = paste0(Celltype, " (", length(Gene), ")")) %>%
-  group_by(Disease, Celltype, Cellclass) %>% dplyr::summarize(Expression = mean(Gene), Percentage = sum(Gene>0)/n())
+  group_by(Celltype) %>% dplyr::mutate(Celltype = paste0(Celltype, " (", length(Expression), ")")) #%>%
+  # group_by(Disease, Celltype, Cellclass) %>% dplyr::summarize(Expression = mean(Expression), Percentage = sum(Expression>0)/n())
 
+data.sum = data.plot %>% group_by(Disease, Patient, Celltype) %>% 
+  dplyr::summarize(Percentage = sum(Expression>0)/n(), Expression = mean(Expression)) %>%
+  tibble %>% tidyr::complete(Patient, Celltype) %>%
+  filter(Celltype == "cDC (12)")
+  
+
+  
+df <- tibble(
+  group = c(1:2, 1, 2),
+  item_id = c(1:2, 2, 3),
+  item_name = c("a", "a", "b", "b"),
+  value1 = c(1, NA, 3, 4),
+  value2 = 4:7
+)
+df %>% complete(group, item_id, item_name)
+
+  
+  
+  
+  
 ggplot(data.plot, aes(x = Disease, y = Celltype)) +
   geom_point(aes(size = Percentage, col = Expression)) +
   scale_size_continuous(labels = scales::percent, limits = c(0.0000001, max(data.plot$Percentage))) +
@@ -41,24 +66,33 @@ ggplot(data.plot, aes(x = Disease, y = Celltype)) +
   facet_grid(Cellclass ~ ., scales = "free_y", space = "free") +
   theme_bw()
 
-data.plot = data.frame("Gene" = data.scaled["SLC9B2",], 
-                       "Celltype" = data@meta.data$subclass.l1,
+data.plot = data.frame("Expression" = data.scaled["CD3E",], 
+                       "Celltype" = data@meta.data$subclass.l2,
                        "Cellclass" = data@meta.data$class,
                        "Disease" = data@meta.data$condition.l1,
                        "Patient" = data@meta.data$patient) %>%
   group_by(Disease) %>% dplyr::mutate(Disease = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
-  group_by(Celltype) %>% dplyr::mutate(Celltype = paste0(Celltype, " (", length(Gene), ")"))
+  group_by(Celltype) %>% dplyr::mutate(Celltype = paste0(Celltype, " (", length(Expression), ")"))
+b = filter(data.plot, Celltype == "T (4590)" & Disease == "AKI (12)")
+sum(b$Expression>0)/nrow(b)
+data.sum = data.plot %>%
+  group_by(Disease, Celltype, Cellclass, Patient) %>% dplyr::summarize(Percentage = sum(Expression>0)/n(), Expression = mean(Expression))
 
-ggplot(data.plot, aes(x = Gene, y = Celltype)) +
+ggplot(data.plot, aes(x = Expression, y = Celltype)) +
   geom_violin(aes(fill = Disease)) +
   scale_x_continuous(expand = c(0,0)) +
-  # scale_color_viridis() +
   facet_grid(Cellclass ~ ., scales = "free_y", space = "free") +
   theme_bw()
 
 unique(data@meta.data$condition.l2)
 
 DimPlot(data, reduction = "ref.umap")
+DotPlot(data, features = "PADI4")
+
+a = data@assays$RNA@data["CD3E",data@meta.data$subclass.l2 == "T"]
+sum(a > 0)/length(a)
+
+max(data@meta.data$percent.mt)
 
 # DimPlot(object = reference, reduction = "wnn.umap", group.by = "celltype.l2", label = TRUE, label.size = 3, repel = TRUE) + NoLegend()
 
