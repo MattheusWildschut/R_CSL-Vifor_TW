@@ -36,15 +36,36 @@ data.plot = data.frame("Expression" = data.matrix["P2RY14",],
            "Disease" = data@meta.data$condition.l1,
            "Patient" = data@meta.data$patient) %>%
   group_by(Disease) %>% dplyr::mutate(Disease = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
-  group_by(Celltype) %>% dplyr::mutate(Celltype = paste0(Celltype, " (", length(Expression), ")")) #%>%
-  # group_by(Disease, Celltype, Cellclass) %>% dplyr::summarize(Expression = mean(Expression), Percentage = sum(Expression>0)/n())
+  group_by(Celltype) %>% dplyr::mutate(Celltype = paste0(Celltype, " (", length(Expression), ")")) 
+data.sum = data.plot %>%
+  group_by(Disease, Celltype, Cellclass) %>% dplyr::summarize(Expression = mean(Expression), Percentage = sum(Expression>0)/n())
 
 data.sum = data.plot %>% group_by(Disease, Patient, Celltype) %>% 
   dplyr::summarize(Percentage = sum(Expression>0)/n(), Expression = mean(Expression)) %>%
-  tibble %>% tidyr::complete(Patient, Celltype) %>%
+  tibble %>% tidyr::complete(Patient, Celltype, fill = list("Expression" = 0, "Percentage" = 0)) %>%
   filter(Celltype == "cDC (12)")
   
+data.num = data.plot %>%
+  group_by(Patient) %>% 
+  dplyr::summarize(AllCells = length(Expression),
+                SelCells = length(Expression[Celltype == "cDC (12)"]))
+ggplot(data.num, aes(x = Patient)) +
+  geom_col(aes(y = AllCells), fill = "black", width = 0.5, position = position_nudge(x = -0.25)) +
+  geom_col(aes(y = SelCells*max(AllCells)/max(SelCells)), fill = "grey80", width = 0.5, position = position_nudge(x = 0.25)) +
+  scale_y_continuous(name = "All cells", sec.axis = sec_axis(~./max(data.num$AllCells)*max(data.num$SelCells), name = "cDC (12) cells"), expand = c(0,0)) +
+  theme_bw() + theme(axis.title.y.right = element_text(color = "grey80"), axis.text.y.right = element_text(color = "grey80"), axis.ticks.y.right = element_line(color = "grey80"))
 
+unique(data@meta.data$subclass.full)
+unique(data@meta.data$subclass.l2)
+
+
+install.packages("xlsx")
+library(xlsx)
+
+wb = createWorkbook()
+addDataFrame(as.data.frame(data.num), sheet = createSheet(wb, "Sheet 1"), row.names=FALSE)
+addDataFrame(as.data.frame(data.sum), sheet = createSheet(wb, "Sheet 2"), row.names=FALSE)
+saveWorkbook(wb, "My_File2.xlsx")
   
 df <- tibble(
   group = c(1:2, 1, 2),
