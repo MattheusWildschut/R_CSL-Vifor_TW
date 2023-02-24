@@ -7,6 +7,8 @@ source("SourceFile_TW.R")
 
 library(Seurat)
 library(SeuratDisk)
+library(scales)
+library(xlsx)
 
 data = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seurat_03282022.h5Seurat",
                     assays = list(RNA = "data"))
@@ -30,10 +32,11 @@ fields.cell = data.frame("Field" = c("class", paste0("subclass", c(".l1", ".l2",
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = {fluidPage(
+  useShinyjs(),
   titlePanel("CSL-Vifor_KPMP-browser_TW"),
   tabsetPanel(
-    # Dotplot UI ---------
-    tabPanel("Data grouping", fluid = TRUE, 
+    # Gene expression UI ---------
+    tabPanel("Gene expression", fluid = TRUE, 
              sidebarLayout(
                sidebarPanel(
                  selectizeInput(inputId = "gene",
@@ -54,8 +57,15 @@ ui = {fluidPage(
                                 value = TRUE,
                                 status = "primary"),
                  uiOutput(outputId = "ui.celltype"),
-                 downloadBttn('download.xlsx', list(icon("file-excel"), "Download data as Excel", icon("file-excel")),
-                              color = "success", size = "sm")
+                 downloadBttn(outputId = "download.xlsx",
+                              label = list(icon("file-excel"), "Download data"),
+                              color = "success", size = "sm"),
+                 downloadBttn(outputId = "download.celltype",
+                              label = list(icon("file-pdf"), "Download Plot 1"),
+                              color = "danger", size = "sm"),
+                 downloadBttn(outputId = "download.patient",
+                              label = list(icon("file-pdf"), "Download Plot 2"),
+                              color = "danger", size = "sm")
                ),
                mainPanel(
                  plotOutput("plot.celltype", height = 1000),
@@ -71,6 +81,7 @@ server = function(input, output, session) {
   session$onSessionEnded(function() {
     stopApp()
   })
+  # Gene expression Server ---------
   updateSelectizeInput(session, "gene", choices = sort(rownames(data@assays$RNA@data)), 
                        selected = "P2RY14", options = list(maxOptions = 100000), server = TRUE)
   output$ui.celltype = renderUI({
@@ -111,7 +122,7 @@ server = function(input, output, session) {
     
     list("data.patient" = data.patient, "data.num" = data.num)
   })
-  output$plot.celltype = renderPlot({
+  plot.celltype = reactive({
     data.sum = data.celltype()$data.sum
     dot.plot = ggplot(data.sum, aes(x = Disease, y = Celltype2)) +
       geom_point(aes(size = Percentage, col = Expression)) +
@@ -132,7 +143,7 @@ server = function(input, output, session) {
     
     dot.plot + box.plot + plot_layout(widths = c(1,3))
   })
-  output$plot.patient = renderPlot({
+  plot.patient = reactive({
       data.patient = data.patient()$data.patient
       dot.plot = ggplot(data.patient, aes(x = Patient, y = Celltype)) +
         geom_point(aes(size = Percentage, col = Expression)) +
@@ -156,6 +167,12 @@ server = function(input, output, session) {
 
       bar.plot / dot.plot + plot_layout(heights = c(2,0.75+0.25*length(input$celltype)))
   })
+  output$plot.celltype = renderPlot({
+    plot.celltype()
+  })
+  output$plot.patient = renderPlot({
+    plot.patient()
+  })
   output$ui.plot.patient = renderUI({
     plotOutput("plot.patient", height = 450+20*length(input$celltype))
   })
@@ -163,10 +180,33 @@ server = function(input, output, session) {
     filename = function() { paste0('Excel-data_KPMP-browser_', Sys.Date(), '.xlsx') },
     content = function(file) {
       wb = createWorkbook()
-      addDataFrame(as.data.frame(data.celltype()$data.sum), sheet = createSheet(wb, "Data.sum"), row.names=FALSE)
-      addDataFrame(as.data.frame(data.patient()$data.patient), sheet = createSheet(wb, "Data.patient"), row.names=FALSE)
-      addDataFrame(as.data.frame(data.patient()$data.num), sheet = createSheet(wb, "Data.num"), row.names=FALSE)
+      addDataFrame(as.data.frame(data.celltype()$data.sum %>% mutate(Percentage = percent(Percentage))),
+                   sheet = createSheet(wb, "Data.sum"), row.names = FALSE)
+      if(!is.null(input$celltype)){
+        addDataFrame(as.data.frame(data.patient()$data.patient %>% mutate(Percentage = percent(Percentage))), 
+                     sheet = createSheet(wb, "Data.patient"), row.names = FALSE)
+        addDataFrame(as.data.frame(data.patient()$data.num %>% mutate(SelCells = percent(SelCells))),
+                                   sheet = createSheet(wb, "Data.num"), row.names = FALSE)
+      }
       saveWorkbook(wb, file)
+  })
+  output$download.celltype = downloadHandler(
+    filename = function() { paste0("Celltype-plot_", input$gene, "_", input$pat.grouping, "-", input$cell.grouping, "_", Sys.Date(), '.pdf') },
+    content = function(file) {
+      ggsave(file, plot.celltype(), height = 16, width = 9)
+    })
+  output$download.patient = downloadHandler(
+    filename = function() { paste0("Patient-plot_", input$gene, "_", input$pat.grouping, "-", input$cell.grouping, "_", Sys.Date(), '.pdf') },
+    content = function(file) {
+      if(!is.null(input$celltype)){
+        ggsave(file, plot.patient(), height = 8, width = 10)  
+      } else {
+        showNotification("Select cell type of interest first")
+      }
+    }
+    )
+  observe({
+    if(is.null(input$celltype)) hide("download.patient_bttn") else show("download.patient_bttn")
   })
 }
 

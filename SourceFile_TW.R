@@ -35,6 +35,6 @@ options(dplyr.summarise.inform = FALSE)
 options(clusterProfiler.download.method = "auto")
 
 ## Set multicore processor for foreach loops ------------------------------------------------------------------------
-n.cores <- parallel::detectCores() - 1
-doParallel::registerDoParallel(cl = parallel::makeCluster(n.cores, type = "PSOCK"))
-rm(n.cores)
+# n.cores <- parallel::detectCores() - 1
+# doParallel::registerDoParallel(cl = parallel::makeCluster(n.cores, type = "PSOCK"))
+# rm(n.cores)

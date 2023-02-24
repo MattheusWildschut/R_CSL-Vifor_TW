@@ -333,17 +333,17 @@ server = function(input, output, session) {
   output$probe.corrGSEA = renderPlot({
     probe_corrGSEA()
   })
-  output$download.boxplot <- downloadHandler(
+  output$download.boxplot = downloadHandler(
     filename = function() { paste0('Boxplot_', input$gene, "-", select_probe(), "_", Sys.Date(), '.pdf') },
     content = function(file) {
       ggsave(file, probe_boxplot(), height = 6, width = 5)
   })
-  output$download.correlations <- downloadHandler(
+  output$download.correlations = downloadHandler(
     filename = function() { paste0('Correlations_', input$gene, "-", select_probe(), "_", Sys.Date(), '.pdf') },
     content = function(file) {
       ggsave(file, probe_correlations(), height = 6, width = ifelse(input$correlations == "Manual", 4.75, 16))
   })
-  output$download.corrGSEA <- downloadHandler(
+  output$download.corrGSEA = downloadHandler(
     filename = function() { paste0('Correlation-GSEA_', input$gene, "-", select_probe(), "_", Sys.Date(), '.pdf') },
     content = function(file) {
       ggsave(file, probe_corrGSEA(), height = 6, width = 12)
