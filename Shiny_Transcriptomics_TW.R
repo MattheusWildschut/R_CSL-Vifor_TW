@@ -2,8 +2,6 @@
 setwd("C:\\Users\\mwildschut\\OneDrive - Vifor Pharma AG\\Documents\\R\\Projects\\R_CSL-Vifor_TW")
 source("SourceFile_TW.R")
 
-library(GEOquery)
-library(DT)
 dataset = "GSE7869"
 gse = getGEO(dataset, GSEMatrix = TRUE)[[1]]
 

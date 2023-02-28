@@ -7,17 +7,18 @@ source("SourceFile_TW.R")
 
 library(Seurat)
 library(SeuratDisk)
-library(scales)
-library(xlsx)
 
-data = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seurat_03282022.h5Seurat",
-                    assays = list(RNA = "data"))
-data = subset(data, subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
-annot = fread("Input//GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Metadata_Field_Descriptions.txt.gz")
+data.scRNA = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seurat_03282022.h5Seurat", assays = list(RNA = "data")) %>%
+  subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
+data.snRNA = LoadH5Seurat("Input\\GSE183277_Kidney_Healthy-Injury_Cell_Atlas_snCv3_Seurat_03282022.h5Seurat", assays = list(RNA = "data")) %>%
+  subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
+annot.scRNA = fread("Input//GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Metadata_Field_Descriptions.txt.gz") 
+# annot.snRNA = fread("Input//GSE183277_Kidney_Healthy-Injury_Cell_Atlas_snCv3_Metadata_Field_Descriptions.txt.gz")
 fields.pat = data.frame("Field" = c(paste0("condition", c(".long", ".l1", ".l2", ".l3")), "patient", "sex", "race")) %>%
-  mutate(Description = annot$Description[match(Field, annot$Field)])
+  mutate(Description = annot.scRNA$Description[match(Field, annot.scRNA$Field)])
 fields.cell = data.frame("Field" = c("class", paste0("subclass", c(".l1", ".l2", ".l3", ".full")), "state.l1", "state.l2")) %>%
-  mutate(Description = annot$Description[match(Field, annot$Field)])
+  mutate(Description = annot.scRNA$Description[match(Field, annot.scRNA$Field)])
+data = get(paste0("data.", "snRNA"))
 
 ## Data from https://atlas.kpmp.org/repository/?facetTab=files&files_size=60&files_sort=%5B%7B%22field%22%3A%22
 ## file_name%22%2C%22order%22%3A%22asc%22%7D%5D&filters=%7B%22op%22%3A%22and%22%2C%22content%22%3A%5B%7B%22op%22%3A%22in
@@ -39,6 +40,12 @@ ui = {fluidPage(
     tabPanel("Gene expression", fluid = TRUE, 
              sidebarLayout(
                sidebarPanel(
+                 radioGroupButtons(inputId = "dataset",
+                                   label = "Choose scRNA-seq or snRNA-seq dataset",
+                                   choices = c("scRNA", "snRNA"),
+                                   justified = TRUE,
+                                   checkIcon = list(yes = tags$i(class = "fa fa-circle", style = "color: steelblue"),
+                                                    no = tags$i(class = "fa fa-circle-o", style = "color: steelblue"))),
                  selectizeInput(inputId = "gene",
                                 label = "Select gene of interest",
                                 choices = NULL),
@@ -81,11 +88,14 @@ server = function(input, output, session) {
   session$onSessionEnded(function() {
     stopApp()
   })
+  data = reactive({
+    get(paste0("data.", input$dataset))
+  })
   # Gene expression Server ---------
-  updateSelectizeInput(session, "gene", choices = sort(rownames(data@assays$RNA@data)), 
+  updateSelectizeInput(session, "gene", choices = sort(rownames(data.snRNA@assays$RNA@data)), 
                        selected = "P2RY14", options = list(maxOptions = 100000), server = TRUE)
   output$ui.celltype = renderUI({
-    celltypes = unique(sort(as.character(unlist(data@meta.data[,input$cell.grouping]))))
+    celltypes = unique(sort(as.character(unlist(data()@meta.data[,input$cell.grouping]))))
     pickerInput(inputId = "celltype",
                 label = "Select cell types of interest for single patient assesment",
                 choices = celltypes,
@@ -95,11 +105,11 @@ server = function(input, output, session) {
   })
   data.celltype = reactive({
     req(input$gene, input$pat.grouping, input$cell.grouping)
-    data.plot = data.frame("Expression" = data@assays$RNA@data[input$gene,], #["SLC9B2",], #
-                           "Disease" = data@meta.data[,input$pat.grouping], #[,"condition.l1"], #
-                           "Celltype" = data@meta.data[,input$cell.grouping], #[,"subclass.l1"], #
-                           "Cellclass" = data@meta.data$class, #ClusterClass,# 
-                           "Patient" = data@meta.data$patient) %>% #orig.ident) %>% # 
+    data.plot = data.frame("Expression" = data()@assays$RNA@data[input$gene,], #["SLC9B2",], #
+                           "Disease" = data()@meta.data[,input$pat.grouping], #[,"condition.l1"], #
+                           "Celltype" = data()@meta.data[,input$cell.grouping], #[,"subclass.l1"], #
+                           "Cellclass" = data()@meta.data$class, #ClusterClass,# 
+                           "Patient" = data()@meta.data$patient) %>% #orig.ident) %>% # 
       group_by(Disease) %>% dplyr::mutate(Disease = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
       group_by(Celltype) %>% dplyr::mutate(Celltype2 = paste0(Celltype, " (", length(Expression), ")"))
     
@@ -108,7 +118,7 @@ server = function(input, output, session) {
     
     list("data.plot" = data.plot, "data.sum" = data.sum)
   })
-  data.patient = reactive({#eventReactive(c(input$celltype, input$gene, input$pat.grouping, input$cell.grouping),{
+  data.patient = reactive({
     req(input$celltype)
     data.patient = data.celltype()$data.plot %>%
       group_by(Disease, Patient, Celltype) %>% dplyr::summarize(Percentage = sum(Expression>0)/n(), Expression = mean(Expression), .groups = "keep") %>%
