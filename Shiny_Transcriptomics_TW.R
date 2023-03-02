@@ -219,7 +219,7 @@ server = function(input, output, session) {
       `colnames<-`(c("Probe", "Group"))
     ggplot(data.probe, aes(x = Group, y = Probe, fill = Group)) +
       geom_boxplot() +
-      labs(x = NULL, y = paste0(input$gene, " (", select_probe(), ")\nlog2 mRNA levels")) +
+      labs(x = NULL, y = paste0(ifelse(input$probe.sum, paste(input$gene, "(Max probe"), paste0(input$gene, " (", select_probe())), ")\nlog2 mRNA levels")) +
       theme_bw() + theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
   })
   output$ui.manualcor = renderUI({
@@ -334,7 +334,7 @@ server = function(input, output, session) {
   output$download.boxplot = downloadHandler(
     filename = function() { paste0('Boxplot_', input$gene, "-", select_probe(), "_", Sys.Date(), '.pdf') },
     content = function(file) {
-      ggsave(file, probe_boxplot(), height = 6, width = 5)
+      ggsave(file, probe_boxplot(), height = 4, width = 5)
   })
   output$download.correlations = downloadHandler(
     filename = function() { paste0('Correlations_', input$gene, "-", select_probe(), "_", Sys.Date(), '.pdf') },

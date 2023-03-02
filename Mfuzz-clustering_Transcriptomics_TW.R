@@ -7,10 +7,10 @@ gse = getGEO(dataset, GSEMatrix = TRUE)[[1]]
 
 uniprot = fread("Input\\Uniprot_HumanProteome_28-02-23.tsv")
 annot = gse@featureData@data
-raw.data = gse@assayData$exprs[annot$`Gene Symbol` != "" & !str_detect(annot$`Gene Symbol`, "-| ///|\\.")
-                               & annot$`Gene Symbol` %in% uniprot$`Gene Names (primary)`,]
-annot = annot[annot$`Gene Symbol` != "" & !str_detect(annot$`Gene Symbol`, "-| ///|\\.")
-              & annot$`Gene Symbol` %in% uniprot$`Gene Names (primary)`,]
+raw.data = gse@assayData$exprs[annot$`Gene Symbol` != "" & !str_detect(annot$`Gene Symbol`, "-| ///|\\."),]
+                               # & annot$`Gene Symbol` %in% uniprot$`Gene Names (primary)`,]
+annot = annot[annot$`Gene Symbol` != "" & !str_detect(annot$`Gene Symbol`, "-| ///|\\."),]
+              # & annot$`Gene Symbol` %in% uniprot$`Gene Names (primary)`,]
 annot.pat = gse@phenoData@data %>%
   mutate(Group = factor(case_when(str_detect(title, "normal|Normal") ~ "Normal",
                                   str_detect(title, "minimally") ~ "MCD",
@@ -19,7 +19,6 @@ annot.pat = gse@phenoData@data %>%
                                   str_detect(title, "large") ~ "Cysts-Large"),
                         levels = c("Normal", "MCD", "Cysts-Small", "Cysts-Medium", "Cysts-Large")))
 
-uniprot = fread("Input\\Uniprot_HumanProteome_28-02-23.tsv")
 annot.genes = data.frame("Gene" = sort(unique(annot$`Gene Symbol`)), 
                          "Description" = annot$`Gene Title`[match(sort(unique(annot$`Gene Symbol`)), annot$`Gene Symbol`)])
 
@@ -41,14 +40,14 @@ m1 = mestimate(data.s)
 m1
 
 # B) Estimate c with Dmin
-Dmin.plot = Dmin(data.s, m1, crange = seq(2,10,1), repeats = 20, visu = TRUE)
-Dmin.plot
+Dmin.plot = Dmin(data.s, m1, crange = seq(2,10,1), repeats = 50, visu = TRUE)
+plot(Dmin.plot)
 
 # C) Estimate c with cselection
 cselection(data.s, m=m1, crange = seq(2,30,1),visu=TRUE)
 
 #### Define Number of Clusters (c), produce and export cluster plot
-c <- 7
+c <- 6
 set.seed(seed = 1)
 cl <- mfuzz(data.s,c,m=m1)
 mfuzz.plot2(data.s, cl=cl, mfrow = c(2,4), time.labels = colnames(raw.data),
@@ -72,8 +71,54 @@ ggplot(data.plot.long, aes(x = Patient2, y = Expression, col = Membership, group
   scale_x_discrete(limits = rev) +
   facet_wrap(. ~ Cluster, nrow = 2) +
   theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + xlab(NULL)
-ggsave("MFuzzPlot_7cluster_Gene.pdf", width = 14, height = 8)
+ggsave("Output\\MFuzzPlot_6cluster_Newest.pdf", width = 12, height = 8)
 
+library(limma)
+kegg2 = getKEGGPathwayNames(species="hsa")
+kegg1 = getGeneKEGGLinks(species="hsa") %>%
+  mutate(Gene = AnnotationDbi::mapIds(org.Hs.eg.db::org.Hs.eg.db, GeneID, column = "SYMBOL", keytype = "ENTREZID"),
+         PathwayID = str_remove(PathwayID, "path:"),
+         Description = str_remove(kegg2$Description[match(PathwayID, kegg2$PathwayID)], " - Homo sapiens \\(human\\)")) %>%
+  select(Description, Gene)
+
+kegg.plots = map(as.list(1:6), function(cluster){
+  set.seed(seed = 1)
+  c = data.plot %>%
+    filter(Gene %in% kegg1$Gene & Cluster == cluster) %>%
+    arrange(desc(Membership))
+  d = setNames(c$Membership, c$Gene)
+  e = GSEA(geneList = d, scoreType = "pos", TERM2GENE = kegg1, pvalueCutoff = 0.1)
+  # b = enricher(data.plot$Gene[data.plot$Cluster == 3 & data.plot$Gene %in% kegg1$Gene], TERM2GENE = kegg1, universe = data.plot$Gene)
+  ggplot(e@result[1:10,], aes(x = -log10(`p.adjust`), y = reorder(Description, `p.adjust`))) +#, size = Count, col = GeneRatio)) +
+    geom_point() + #scale_color_viridis() +
+    # facet_wrap(vars(Sign), scales = "free") +
+    labs(y = NULL, #x = "NES (Normalized enrichment score)", 
+         title = paste("Top 10 enriched KEGG terms\nCluster", cluster)) + #\non ", 
+    # input$gene, " (", ifelse(input$probe.sum, "Max probe", select_probe()), ") correlations")) +
+    scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+})
+wrap_plots(kegg.plots, nrow = 2) + plot_layout(guides = "collect")
+
+gene.ID = uniprot$GeneID[match(data.plot$Gene, uniprot$`Gene Names (primary)`)]
+gene.ID = str_remove(gene.ID, ";.*")
+gene.cluster = gene.ID[data.plot$Cluster == 3 & data.plot$Membership > 0.95 & !is.na(gene.ID) & gene.ID != ""]
+set.seed(1)
+k <- kegga(gene.cluster, universe = gene.ID[!is.na(gene.ID) & gene.ID != ""],
+           species="Hs", plot = TRUE, pathway.names = getKEGGPathwayNames("hsa", remove=TRUE))
+top.k = topKEGG(k)
+top.k$Pathway = str_remove(kegg2$Description[match(str_remove(rownames(top.k), "path:"), kegg2$PathwayID)], " - Homo sapiens \\(human\\)")
+
+ggplot(top.k[1:10,], aes(x = -log10(P.DE), y = reorder(Pathway, P.DE), size = N, col = P.DE)) +
+  geom_point() + #scale_color_viridis() +
+  # facet_wrap(vars(Sign), scales = "free") +
+  labs(y = NULL, #x = "NES (Normalized enrichment score)", 
+       title = paste0("Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)")) + #\non ", 
+  # input$gene, " (", ifelse(input$probe.sum, "Max probe", select_probe()), ") correlations")) +
+  scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+
+
+
+length(unique(kegg1$GeneID))
 a = data.plot %>% group_by(Cluster) %>% slice_max(Membership, n = 1000)
 
 z = KEGGREST::keggConv("ncbi-geneid", "hsa")
