@@ -40,11 +40,13 @@ m1 = mestimate(data.s)
 m1
 
 # B) Estimate c with Dmin
-Dmin.plot = Dmin(data.s, m1, crange = seq(2,10,1), repeats = 50, visu = TRUE)
-plot(Dmin.plot)
+# Dmin.plot = Dmin(data.s, m1, crange = seq(2,10,1), repeats = 50, visu = TRUE)
+# pdf("Output//Clusters_Dmin.pdf")
+# plot(Dmin.plot)
+# dev.off()
 
 # C) Estimate c with cselection
-cselection(data.s, m=m1, crange = seq(2,30,1),visu=TRUE)
+# cselection(data.s, m=m1, crange = seq(2,30,1),visu=TRUE)
 
 #### Define Number of Clusters (c), produce and export cluster plot
 c <- 6
@@ -71,7 +73,7 @@ ggplot(data.plot.long, aes(x = Patient2, y = Expression, col = Membership, group
   scale_x_discrete(limits = rev) +
   facet_wrap(. ~ Cluster, nrow = 2) +
   theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + xlab(NULL)
-ggsave("Output\\MFuzzPlot_6cluster_Newest.pdf", width = 12, height = 8)
+# ggsave("Output\\MFuzzPlot_6cluster_Newest.pdf", width = 12, height = 8)
 
 library(limma)
 kegg2 = getKEGGPathwayNames(species="hsa")
@@ -81,84 +83,25 @@ kegg1 = getGeneKEGGLinks(species="hsa") %>%
          Description = str_remove(kegg2$Description[match(PathwayID, kegg2$PathwayID)], " - Homo sapiens \\(human\\)")) %>%
   select(Description, Gene)
 
-kegg.plots = map(as.list(1:6), function(cluster){
+kegg.data = map(as.list(1:6), function(cluster){
+  list.kegg = sort(cl$membership[,cluster], decreasing = TRUE)
   set.seed(seed = 1)
-  c = data.plot %>%
-    filter(Gene %in% kegg1$Gene & Cluster == cluster) %>%
-    arrange(desc(Membership))
-  d = setNames(c$Membership, c$Gene)
-  e = GSEA(geneList = d, scoreType = "pos", TERM2GENE = kegg1, pvalueCutoff = 0.1)
-  # b = enricher(data.plot$Gene[data.plot$Cluster == 3 & data.plot$Gene %in% kegg1$Gene], TERM2GENE = kegg1, universe = data.plot$Gene)
-  ggplot(e@result[1:10,], aes(x = -log10(`p.adjust`), y = reorder(Description, `p.adjust`))) +#, size = Count, col = GeneRatio)) +
-    geom_point() + #scale_color_viridis() +
-    # facet_wrap(vars(Sign), scales = "free") +
-    labs(y = NULL, #x = "NES (Normalized enrichment score)", 
-         title = paste("Top 10 enriched KEGG terms\nCluster", cluster)) + #\non ", 
-    # input$gene, " (", ifelse(input$probe.sum, "Max probe", select_probe()), ") correlations")) +
-    scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+  enr.KEGG = GSEA(geneList = list.kegg, scoreType = "pos", TERM2GENE = kegg1, pvalueCutoff = 1, eps = 0)
+  # b = enricher(data.plot$Gene[$Cluster == 3 & data.plot$Gene %in% kegg1$Gene], TERM2GENE = kegg1, universe = data.plot$Gene)
+  data.plot.cluster = slice_max(enr.KEGG@result, -log10(`p.adjust`)*sign(NES), n = 10, with_ties = FALSE) %>%
+    enr.KEGG@result %>%
+    mutate(Description = factor(paste(cluster, Description, sep = "_"), levels = paste(cluster, Description, sep = "_")),
+           Significant = `p.adjust` < 0.05,
+           Cluster = cluster)
 })
-wrap_plots(kegg.plots, nrow = 2) + plot_layout(guides = "collect")
-
-gene.ID = uniprot$GeneID[match(data.plot$Gene, uniprot$`Gene Names (primary)`)]
-gene.ID = str_remove(gene.ID, ";.*")
-gene.cluster = gene.ID[data.plot$Cluster == 3 & data.plot$Membership > 0.95 & !is.na(gene.ID) & gene.ID != ""]
-set.seed(1)
-k <- kegga(gene.cluster, universe = gene.ID[!is.na(gene.ID) & gene.ID != ""],
-           species="Hs", plot = TRUE, pathway.names = getKEGGPathwayNames("hsa", remove=TRUE))
-top.k = topKEGG(k)
-top.k$Pathway = str_remove(kegg2$Description[match(str_remove(rownames(top.k), "path:"), kegg2$PathwayID)], " - Homo sapiens \\(human\\)")
-
-ggplot(top.k[1:10,], aes(x = -log10(P.DE), y = reorder(Pathway, P.DE), size = N, col = P.DE)) +
-  geom_point() + #scale_color_viridis() +
-  # facet_wrap(vars(Sign), scales = "free") +
-  labs(y = NULL, #x = "NES (Normalized enrichment score)", 
-       title = paste0("Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)")) + #\non ", 
-  # input$gene, " (", ifelse(input$probe.sum, "Max probe", select_probe()), ") correlations")) +
+data.plot = purrr::reduce(kegg.data, rbind) %>%
+  mutate(Cluster = factor(Cluster, levels = 1:6, labels = paste("Cluster", 1:6)))
+kegg.plots = ggplot(data.plot, aes(x = -log10(`p.adjust`), y = Description, size = NES, col = setSize, alpha = Significant)) +
+  geom_point() + scale_color_viridis() +
+  facet_wrap(.~Cluster, scales = "free") +
+  geom_vline(xintercept = -log10(0.05), linetype = 2) +
+  scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.5)) +
+  labs(x = "-log10(adjusted p-value)", y = NULL, #NES (Normalized enrichment score)
+       title = paste0("Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\nPer cluster (6x cluster analysis)")) +
   scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
-
-
-
-length(unique(kegg1$GeneID))
-a = data.plot %>% group_by(Cluster) %>% slice_max(Membership, n = 1000)
-
-z = KEGGREST::keggConv("ncbi-geneid", "hsa")
-y = names(z)[match(data.plot$Gene, str_remove(z, "ncbi-geneid:"))]
-y[1:10]
-data.plot$Gene[1:10]
-
-kegg2 = getKEGGPathwayNames(species="hsa")
-kegg1 = getGeneKEGGLinks(species="hsa") %>%
-  mutate(Gene = AnnotationDbi::mapIds(org.Hs.eg.db::org.Hs.eg.db, GeneID, column = "SYMBOL", keytype = "ENTREZID"),
-         PathwayID = str_remove(PathwayID, "path:"),
-         Description = str_remove(kegg2$Description[match(PathwayID, kegg2$PathwayID)], " - Homo sapiens \\(human\\)")) %>%
-  select(Description, Gene)
-
-data.plot$Gene[(!data.plot$Gene %in% kegg1$Gene)]
-unique(kegg1$Gene)
-
-kegg1$Description = kegg2$Description[match(kegg1$PathwayID, kegg2$PathwayID)]
-kegg1 = cbind.data.frame(kegg1$Description, kegg1$GeneID)
-# tab = cbind.data.frame(tab$)
-# tab$Symbol <- AnnotationDbi::mapIds(org.Hs.eg.db::org.Hs.eg.db, tab$GeneID,
-#                        column="SYMBOL", keytype="ENTREZID")
-b = enricher(data.plot$Gene[data.plot$Cluster == 2], TERM2GENE = kegg1) #universe = data.plot$Gene)
-dotplot(b)
-
-ggplot(b@result[1:10,], aes(x = -log10(`p.adjust`), y = reorder(Description, `p.adjust`), size = Count, col = GeneRatio)) +
-  geom_point() + #scale_color_viridis() +
-  # facet_wrap(vars(Sign), scales = "free") +
-  labs(y = NULL, #x = "NES (Normalized enrichment score)", 
-       title = paste0("Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)")) + #\non ", 
-                      # input$gene, " (", ifelse(input$probe.sum, "Max probe", select_probe()), ") correlations")) +
-  scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
-
-
-
-d = sort(cl$membership[,4], decreasing = TRUE)
-e = scale(d)[,1]
-names(e) = str_remove(annot$ENTREZ_GENE_ID[match(names(e), annot$`Gene Symbol`)], " ///.*")
-e = e[!duplicated(names(e))]
-
-f = gseKEGG(e, keyType = "ncbi-geneid", organism = "hsa", eps = 0, pvalueCutoff = 1)
-g = f@result
-colnames(b@result)
+ggsave("Output//Mfuzz-6Clusters_GSEA.pdf", kegg.plots, width = 17, height = 6)
