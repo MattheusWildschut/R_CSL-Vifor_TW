@@ -8,10 +8,10 @@ source("SourceFile_TW.R")
 library(Seurat)
 library(SeuratDisk)
 
-data.scRNA = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seurat_03282022.h5Seurat", assays = list(RNA = "data")) %>%
-  subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
-data.snRNA = LoadH5Seurat("Input\\GSE183277_Kidney_Healthy-Injury_Cell_Atlas_snCv3_Seurat_03282022.h5Seurat", assays = list(RNA = "data")) %>%
-  subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
+data.scRNA = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seurat_03282022.h5Seurat", assays = list(RNA = "data")) #%>%
+  # subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
+data.snRNA = LoadH5Seurat("Input\\GSE183277_Kidney_Healthy-Injury_Cell_Atlas_snCv3_Seurat_03282022.h5Seurat", assays = list(RNA = "data"))# %>%
+  # subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
 annot.scRNA = fread("Input//GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Metadata_Field_Descriptions.txt.gz") 
 # annot.snRNA = fread("Input//GSE183277_Kidney_Healthy-Injury_Cell_Atlas_snCv3_Metadata_Field_Descriptions.txt.gz")
 fields.pat = data.frame("Field" = c(paste0("condition", c(".long", ".l1", ".l2", ".l3")), "patient", "sex", "race")) %>%
@@ -23,13 +23,13 @@ data = get(paste0("data.", "snRNA"))
 ## Data from https://atlas.kpmp.org/repository/?facetTab=files&files_size=60&files_sort=%5B%7B%22field%22%3A%22
 ## file_name%22%2C%22order%22%3A%22asc%22%7D%5D&filters=%7B%22op%22%3A%22and%22%2C%22content%22%3A%5B%7B%22op%22%3A%22in
 ## %22%2C%22content%22%3A%7B%22field%22%3A%22dois%22%2C%22value%22%3A%5B%2210.48698%2F92nk-e805%22%5D%7D%7D%5D%7D
-# data = LoadH5Seurat("Input\\521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat")
+data = LoadH5Seurat("Input\\521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat")
 # 
-# data = subset(data, subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
-# fields.pat = data.frame("Field" = c("sampletype", "diseasetype", "age", "gender", "state", "tissuetype", "celltype")) #%>%
-#   # mutate(Description = annot$Description[match(Field, annot$Field)])
-# fields.cell = data.frame("Field" = c("ClusterClass", paste0("subclass", c(".l1", ".l2")), "celltype"))# %>%
-#   # mutate(Description = annot$Description[match(Field, annot$Field)])
+data.scRNA = data#subset(data, subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
+fields.pat = data.frame("Field" = c("sampletype", "diseasetype", "age", "gender", "state", "tissuetype", "celltype")) #%>%
+  # mutate(Description = annot.scRNA$Description[match(Field, annot.scRNA$Field)])
+fields.cell = data.frame("Field" = c("ClusterClass", paste0("subclass", c(".l1", ".l2")), "celltype"))# %>%
+  # mutate(Description = annot.scRNA$Description[match(Field, annot.scRNA$Field)])
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = {fluidPage(
@@ -52,13 +52,13 @@ ui = {fluidPage(
                  pickerInput(inputId = "pat.grouping",
                              label = "Select patient grouping", 
                              choices = fields.pat$Field,
-                             choicesOpt = list(subtext = fields.pat$Description),
-                             selected = "condition.l1"),
+                             # choicesOpt = list(subtext = fields.pat$Description),
+                             selected = "diseasetype"), #"condition.l1"
                  pickerInput(inputId = "cell.grouping",
                              label = "Select cell grouping", 
                              choices = fields.cell$Field,
-                             choicesOpt = list(subtext = fields.cell$Description),
-                             selected = "subclass.l2"),
+                             # choicesOpt = list(subtext = fields.cell$Description),
+                             selected = "celltype"),
                  materialSwitch(inputId = "cell.class",
                                 label = "Split cell types by class",
                                 value = TRUE,
@@ -108,8 +108,8 @@ server = function(input, output, session) {
     data.plot = data.frame("Expression" = data()@assays$RNA@data[input$gene,], #["SLC9B2",], #
                            "Disease" = data()@meta.data[,input$pat.grouping], #[,"condition.l1"], #
                            "Celltype" = data()@meta.data[,input$cell.grouping], #[,"subclass.l1"], #
-                           "Cellclass" = data()@meta.data$class, #ClusterClass,# 
-                           "Patient" = data()@meta.data$patient) %>% #orig.ident) %>% # 
+                           "Cellclass" = data()@meta.data$ClusterClass, #ClusterClass,# 
+                           "Patient" = data()@meta.data$SpecimenID) %>% #orig.ident) %>% # 
       group_by(Disease) %>% dplyr::mutate(Disease = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
       group_by(Celltype) %>% dplyr::mutate(Celltype2 = paste0(Celltype, " (", length(Expression), ")"))
     
@@ -222,3 +222,16 @@ server = function(input, output, session) {
 
 ## App ----------------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
+
+data.plot = data.frame("Expression" = data.scRNA@assays$RNA@data["P2RY14",], #["SLC9B2",], #
+                       "Disease" = data.scRNA@meta.data$diseasetype, #[,"condition.l1"], #
+                       "Celltype" = data.scRNA@meta.data$celltype, #[,"subclass.l1"], #
+                       "Cellclass" = data.scRNA@meta.data$ClusterClass, #ClusterClass,# 
+                       "Patient" = data.scRNA@meta.data$SpecimenID) %>% #orig.ident) %>% # 
+  group_by(Disease) %>% dplyr::mutate(Disease = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
+  group_by(Celltype) %>% dplyr::mutate(Celltype2 = paste0(Celltype, " (", length(Expression), ")")) %>%
+  filter(Celltype2 %in% c("cDC (1708)", "pDC (207)"))
+
+data.sum = data.plot %>%
+  group_by(Disease, Celltype2, Cellclass, Patient) %>% dplyr::summarize(Percentage = sum(Expression>0)/n(), Expression = mean(Expression)) %>%
+  group_by(Disease, Celltype2, Cellclass)

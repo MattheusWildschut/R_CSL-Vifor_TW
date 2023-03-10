@@ -33,11 +33,11 @@ annot.genes = data.frame("Gene" = sort(unique(annot$`Gene Symbol`)),
                          "Description" = annot$`Gene Title`[match(sort(unique(annot$`Gene Symbol`)), annot$`Gene Symbol`)])
 annot.pat = gse@phenoData@data %>%
   mutate(Group = factor(case_when(str_detect(title, "normal|Normal") ~ "Normal (n=3)",
-                                  str_detect(title, "minimally") ~ "MCD (n=5)",
+                                  str_detect(title, "minimally") ~ "Cysts-Minimal (n=5)",
                                   str_detect(title, "small") ~ "Cysts-Small (n=5)",
                                   str_detect(title, "medium") ~ "Cysts-Medium (n=5)",
                                   str_detect(title, "large") ~ "Cysts-Large (n=3)"),
-                        levels = c("Normal (n=3)", "MCD (n=5)", "Cysts-Small (n=5)", "Cysts-Medium (n=5)", "Cysts-Large (n=3)")))
+                        levels = c("Normal (n=3)", "Cysts-Minimal (n=5)", "Cysts-Small (n=5)", "Cysts-Medium (n=5)", "Cysts-Large (n=3)")))
 kable(annot.pat[,c("Group", "source_name_ch1")]) %>%
     kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 14)
 ```
@@ -45,7 +45,7 @@ kable(annot.pat[,c("Group", "source_name_ch1")]) %>%
 
 
 ### Calculate correlations
-```{r Calculate correlations}
+```{r Calculate correlations, paged.print=TRUE}
 max.data = as.data.frame(raw.data) %>%
   mutate(Gene = annot$`Gene Symbol`) %>%
   group_by(Gene) %>%
@@ -64,51 +64,81 @@ kable(data.cor) %>%
 ## Plots
 
 ### Boxplots of top correlations
-```{r Boxplots of top correlations, fig.width=15, fig.height=5}
+```{r Boxplots of top correlations, fig.width=15, fig.height=2.5}
 max.data.long = max.data %>% as.data.frame %>% rownames_to_column("Gene") %>%
   pivot_longer(-Gene, names_to = "Patient", values_to = "Expression") %>%
   mutate(Group = annot.pat$Group[match(Patient, annot.pat$geo_accession)])
 
-box.plots = map(as.list(c(data.cor$Gene[match(1:5, data.cor$Rank_Spearman)],
-                          data.cor$Gene[match(1:5, data.cor$Rank_Pearson)])),
+box.plots = map(as.list(slice_max(data.cor, Spearman, n = 5) %>% select(Gene) %>% unlist),
+                          # data.cor$Gene[match(1:5, data.cor$Rank_Pearson)])),
       function(gene){
         ggplot(filter(max.data.long, Gene == gene), aes(x = Group, y = Expression, fill = Group, group = Group)) +
           geom_boxplot() +
           labs(x = NULL, y = paste0(gene, "\nlog2 mRNA levels")) +
           theme_bw() + theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
         })
-wrap_plots(box.plots, nrow = 2) + plot_layout(guides = "collect")
-# ggsave("Output//Boxplots_ADPKD-Group_Correlations.pdf", width = 15, height = 5)
+wrap_plots(box.plots, nrow = 1) + plot_layout(guides = "collect")
+# ggsave("Output//Boxplots_ADPKD-Group_Spearman-Correlations.pdf", width = 15, height = 2.5)
 
 ```
 <hr style="border:1px solid gray"></hr>
 
 ### GSEA on correlations
-```{r GSEA on correlations, fig.width=12, fig.height=10}
+```{r GSEA on correlations, fig.width=12, fig.height=4.5}
 kegg2 = getKEGGPathwayNames(species="hsa")
 kegg1 = getGeneKEGGLinks(species="hsa") %>%
   mutate(Gene = AnnotationDbi::mapIds(org.Hs.eg.db::org.Hs.eg.db, GeneID, column = "SYMBOL", keytype = "ENTREZID"),
          PathwayID = str_remove(PathwayID, "path:"),
          Description = str_remove(kegg2$Description[match(PathwayID, kegg2$PathwayID)], " - Homo sapiens \\(human\\)")) %>%
+    filter(!str_detect(PathwayID, "hsa05|04930|04940|04950|04936|04932|04931|04933|04934|01501|01502|01503|01521|01524|01523|01522"))  %>%
   select(Description, Gene)
 
-GSEA.correlations = function(cor_method){
-  list.kegg = setNames(data.cor[,cor_method], data.cor$Gene)[order(data.cor[,cor_method], decreasing = TRUE)]
-  set.seed(seed = 1)
-  enr.KEGG = GSEA(geneList = list.kegg, TERM2GENE = kegg1, eps = 0)
+# renal.fibrosis = read.csv("Input/Renalfibrosis.csv", sep = ";")
+# kegg1 = getGeneKEGGLinks(species="hsa") %>%
+#   mutate(Gene = AnnotationDbi::mapIds(org.Hs.eg.db::org.Hs.eg.db, GeneID, column = "SYMBOL", keytype = "ENTREZID"),
+#          PathwayID = str_remove(PathwayID, "path:"),
+#          Description = str_remove(kegg2$Description[match(PathwayID, kegg2$PathwayID)], " - Homo sapiens \\(human\\)")) %>%
+#   filter(Description %in% c("Vasopressin-regulated water reabsorption", "TGF-beta signaling pathway",
+#                             "cAMP signaling pathway", "Calcium signaling pathway", "PI3K-Akt signaling pathway",
+#                             "mTOR signaling pathway", "AMPK signaling pathway")) %>%
+#   select(Description, Gene) %>%
+#   rbind.data.frame(data.frame("Description" = "Renal fibrosis", "Gene" = renal.fibrosis$Gene.Symbol))
 
-  data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(enr.KEGG@result, NES, n = 10)) %>%
-    mutate(Description = factor(Description, levels = Description),
-           Sign = factor(sign(NES), levels = c(-1,1), labels = c("Negative", "Positive")))
+list.kegg = setNames(data.cor$Spearman, data.cor$Gene)
+set.seed(seed = 1)
+enr.KEGG = GSEA(geneList = list.kegg, TERM2GENE = kegg1, eps = 0, pvalueCutoff = 1)
 
-  ggplot(data.plot, aes(x = NES, y = Description, size = -log10(`p.adjust`), col = setSize)) +
-    geom_point() + scale_color_viridis() +
-    facet_wrap(vars(Sign), scales = "free") +
-    labs(x = "NES (Normalized enrichment score)", y = NULL,
-         title = paste("Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\non ADPDK-group",
-                        cor_method, "correlations")) +
-    scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
-  # ggsave(paste0("Output//GSEA_", cor_method, "_ADPKD-Group_Correlations.pdf"), width = 12, height = 5)
-}
-GSEA.correlations("Spearman") / GSEA.correlations("Pearson")
+data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(enr.KEGG@result, NES, n = 10)) %>%
+  # enr.KEGG@result %>%
+  mutate(Description = factor(Description, levels = Description),
+         Sign = factor(sign(NES), levels = c(-1,1), labels = c("Negative", "Positive")),
+         Significant = `p.adjust` < 0.05)
+
+ggplot(data.plot, aes(x = NES, y = Description, size = -log10(`p.adjust`), col = setSize, alpha = Significant)) +
+  geom_point() + scale_color_viridis() + scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) + guides(alpha = FALSE) +
+  facet_wrap(vars(Sign), scales = "free") +
+  labs(x = "NES (Normalized enrichment score)", y = NULL,
+       title = "Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\non ADPDK-group Spearman correlations") +
+  scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output//GSEA_Spearman_ADPKD-Group_Correlations.pdf", width = 12, height = 4.5)
+# ggsave("Output//GSEA_Selected_ADPKD-Group_Correlations.pdf", width = 10, height = 4)
+
+```
+
+## Extra
+
+### Heatmap hierarchical clustering fibrosis genes
+```{r Fibrosis heatmap, fig.width=6.5, fig.height=14}
+renal.fibrosis = read.csv("Input/Renalfibrosis.csv", sep = ";")
+fib.data = max.data[row.names(max.data) %in% renal.fibrosis$Gene.Symbol,]
+fib.data = t(apply(fib.data, 1, scale))
+
+ha = HeatmapAnnotation(df = data.frame("Group" = annot.pat$Group),
+                       col = list("Group" = setNames(viridis(5), levels(annot.pat$Group))), border = TRUE)
+{heat.fib = Heatmap(fib.data, top_annotation = ha, name = "Scaled expression",
+                   row_km = 3, row_km_repeats = 100, column_km = 3, column_km_repeats = 100,
+                   row_names_gp = gpar(fontsize = 6), border = TRUE, rect_gp = gpar(col = "grey90", lwd = 0.1))
+  as_ggplot(grid.grabExpr(draw(heat.fib)))}
+# ggsave("Output//FibrosisSignature_Heatmap_Scaled.pdf", width = 6, height = 14)
+
 ```

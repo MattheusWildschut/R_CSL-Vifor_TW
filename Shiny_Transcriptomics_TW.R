@@ -9,14 +9,33 @@ annot = gse@featureData@data
 data = gse@assayData$exprs[annot$`Gene Symbol` != "",]
 annot = annot[annot$`Gene Symbol` != "",]
 annot.pat = gse@phenoData@data %>%
-  mutate(Group = factor(case_when(str_detect(title, "normal|Normal") ~ "Normal",
-                                  str_detect(title, "minimally") ~ "MCD",
-                                  str_detect(title, "small") ~ "Cysts-Small",
-                                  str_detect(title, "medium") ~ "Cysts-Medium",
-                                  str_detect(title, "large") ~ "Cysts-Large"),
-                        levels = c("Normal", "MCD", "Cysts-Small", "Cysts-Medium", "Cysts-Large")))
+  mutate(Group = factor(case_when(str_detect(title, "normal|Normal") ~ "Normal (n=3)",
+                                  str_detect(title, "minimally") ~ "Cysts-Minimal (n=5)",
+                                  str_detect(title, "small") ~ "Cysts-Small (n=5)",
+                                  str_detect(title, "medium") ~ "Cysts-Medium (n=5)",
+                                  str_detect(title, "large") ~ "Cysts-Large (n=3)"),
+                        levels = c("Normal (n=3)", "Cysts-Minimal (n=5)", "Cysts-Small (n=5)", "Cysts-Medium (n=5)", "Cysts-Large (n=3)")))
 annot.genes = data.frame("Gene" = sort(unique(annot$`Gene Symbol`)), 
                          "Description" = annot$`Gene Title`[match(sort(unique(annot$`Gene Symbol`)), annot$`Gene Symbol`)])
+kegg2 = getKEGGPathwayNames(species = "hsa")
+kegg1 = getGeneKEGGLinks(species = "hsa") %>%
+  mutate(Gene = AnnotationDbi::mapIds(org.Hs.eg.db::org.Hs.eg.db, GeneID, column = "SYMBOL", keytype = "ENTREZID"),
+         PathwayID = str_remove(PathwayID, "path:"),
+         Description = str_remove(kegg2$Description[match(PathwayID, kegg2$PathwayID)], " - Homo sapiens \\(human\\)")) %>%
+  # filter(!str_detect(PathwayID, "hsa05|04930|04940|04950|04936|04932|04931|04933|04934|01501|01502|01503|01521|01524|01523|01522")) %>%
+  select(Description, GeneID) #Gene,
+
+# renal.fibrosis = read.csv("Input/Renalfibrosis.csv", sep = ";") %>%
+#   mutate(GeneID = AnnotationDbi::mapIds(org.Hs.eg.db::org.Hs.eg.db, Gene.Symbol, column = "ENTREZID", keytype = "SYMBOL"))
+# kegg1 = getGeneKEGGLinks(species="hsa") %>%
+#   mutate(Gene = GeneID, #Gene = AnnotationDbi::mapIds(org.Hs.eg.db::org.Hs.eg.db, GeneID, column = "SYMBOL", keytype = "ENTREZID"),
+#          PathwayID = str_remove(PathwayID, "path:"),
+#          Description = str_remove(kegg2$Description[match(PathwayID, kegg2$PathwayID)], " - Homo sapiens \\(human\\)")) %>%
+#   filter(Description %in% c("Vasopressin-regulated water reabsorption", "TGF-beta signaling pathway",
+#                             "cAMP signaling pathway", "Calcium signaling pathway", "PI3K-Akt signaling pathway",
+#                             "mTOR signaling pathway", "AMPK signaling pathway")) %>%
+#   select(Description, Gene) %>%
+#   rbind.data.frame(data.frame("Description" = "Renal fibrosis", "Gene" = renal.fibrosis$GeneID))
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = {fluidPage(
@@ -309,13 +328,22 @@ server = function(input, output, session) {
     
     cors.list = setNames(cors.sum$Correlation, cors.sum$ENTREZID)
     set.seed(0)
-    enr.KEGG = gseKEGG(cors.list, keyType = "ncbi-geneid", organism = "hsa", eps = 0)
-    data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(enr.KEGG@result, NES, n = 10)) %>%
-      mutate(Description = factor(Description, levels = Description),
-             Sign = factor(sign(NES), levels = c(-1,1), labels = c("Negative", "Positive")))
+    GSEA.enr = GSEA(cors.list, TERM2GENE = kegg1, pvalueCutoff = 1, eps = 0)
+    GSEA.slim = GSEA.enr@result %>%
+      filter(!duplicated(.[,-c(1,2)]))
+    data.plot = rbind.data.frame(slice_max(GSEA.slim, NES, n = 10), slice_min(GSEA.slim, NES, n = 10)) %>%
+      # GSEA.slim %>%
+        mutate(Description = factor(Description, levels = Description),
+               Sign = factor(sign(NES), levels = c(-1,1), labels = c("Negative", "Positive")),
+               Significant = `p.adjust` < 0.05)
+    # enr.KEGG = GSEA(geneList = cors.list, scoreType = "pos", TERM2GENE = kegg1, pvalueCutoff = 1, eps = 0)
+    
+    # data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(enr.KEGG@result, NES, n = 10)) %>%
+    #   mutate(Description = factor(Description, levels = Description),
+    #          Sign = factor(sign(NES), levels = c(-1,1), labels = c("Negative", "Positive")))
 
-    ggplot(data.plot, aes(x = NES, y = Description, size = -log10(`p.adjust`), col = setSize)) +
-      geom_point() + scale_color_viridis() +
+    ggplot(data.plot, aes(x = NES, y = Description, size = -log10(`p.adjust`), col = setSize, alpha = Significant)) +
+      geom_point() + scale_color_viridis() + scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) + guides(alpha = FALSE) +
       facet_wrap(vars(Sign), scales = "free") +
       labs(x = "NES (Normalized enrichment score)", y = NULL,
            title = paste0("Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\non ", 
@@ -344,10 +372,9 @@ server = function(input, output, session) {
   output$download.corrGSEA = downloadHandler(
     filename = function() { paste0('Correlation-GSEA_', input$gene, "-", select_probe(), "_", Sys.Date(), '.pdf') },
     content = function(file) {
-      ggsave(file, probe_corrGSEA(), height = 6, width = 12)
+      ggsave(file, probe_corrGSEA(), height = 5, width = 13)
   })
 }
 
 ## App ----------------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
-               

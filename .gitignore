@@ -4,3 +4,9 @@
 .httr-oauth
 .DS_Store
 input/
+Output/
+*.html
+*.pdf
+*.csv
+*.png
+Trial_IronDeficiency_TW.R
