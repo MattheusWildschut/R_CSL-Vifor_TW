@@ -7,11 +7,8 @@ output: html_document
 
 Built with R version `r getRversion()`
 
-```{r load packages & functions, include=FALSE}
-source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
-```
-
 ```{r setup, include=FALSE}
+source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
 opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
@@ -66,6 +63,7 @@ ggplot(a, aes(x = moleculeNames, y = totalIntensity, fill = Tissue.Type, col = T
 ## AKI models
 ### Piglet AKI model metabolomics
 Data downloaded from https://journals.physiology.org/doi/full/10.1152/ajprenal.00039.2022?rfr_dat=cr_pub++0pubmed&url_ver=Z39.88-2003&rfr_id=ori%3Arid%3Acrossref.org
+![Davidson2022 Abstract](Input/Davidson2022_Abstract.png)
 ```{r Piglet AKI model metabolomics, fig.width=10, fig.height=4.5}
 data = read.csv("Input/Complete Metabolite Dataset_Davidson2022.csv", sep = ";") %>%
   dplyr::mutate(across(3:243, as.numeric)) %>%
@@ -76,19 +74,45 @@ data = read.csv("Input/Complete Metabolite Dataset_Davidson2022.csv", sep = ";")
   mutate(Metabolite = str_replace(Metabolite, "\\.gluc", "\ngluc"))
 
 plots.all = ggplot(data, aes(x = Group, y = `Intensity (Normalized)`, fill = Group, group = Group)) +
-  geom_boxplot(linewidth = 0.2, outlier.size = 0) + geom_jitter(width = 0.1, alpha = 0.5, size = 0.5) +
+  geom_boxplot(linewidth = 0.2, outlier.alpha = 0) + geom_jitter(width = 0.1, alpha = 0.6, size = 0.5) +
   facet_grid(Tissue ~ Metabolite, scales = "free") +
-  stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3)), method = "t.test", method.args = list(var.equal = TRUE), label = "p.signif", hide.ns = TRUE, vjust = 0.4) +
+  stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3)), method = "t.test", label = "p.signif", hide.ns = TRUE, vjust = 0.4) +
   theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), strip.text.x = element_text(size = 6))
 
 plot.udpgluc = ggplot(filter(data, Tissue == "Kidney" & Metabolite == "UDP.D\nglucose"), aes(x = Group, y = `Intensity (Normalized)`, fill = Group, group = Group)) +
-  geom_boxplot(linewidth = 0.2, outlier.size = 0) + geom_jitter(width = 0.1, alpha = 0.5) +
+  geom_boxplot(linewidth = 0.2, outlier.alpha = 0) + geom_jitter(width = 0.1, alpha = 0.6) +
   facet_grid(Tissue ~ Metabolite, scales = "free") +
-stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3)), method = "t.test", method.args = list(var.equal = TRUE), label = "p.signif", hide.ns = TRUE, vjust = 0.4) +
+stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3)), method = "t.test", label = "p.signif", hide.ns = TRUE, vjust = 0.4) +
   theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 
-plots.all + (plot_spacer() / plot.udpgluc / plot_spacer() + plot_layout(heights = c(1,2,1))) + 
+plots.all + (plot_spacer() / plot.udpgluc / plot_spacer() + plot_layout(heights = c(1,2,1), guides = "collect")) + 
   plot_layout(widths = c(4,1), guides = "collect")
 ggsave("Output/Piglet_AKI_Boxplots.pdf", width = 10, height = 4.5)
-```
 
+```
+<hr style="border:1px solid gray"></hr>
+
+### Diabetes AKI data metabolomics
+Data downloaded from https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7231503/#supplemental-information
+![Wang2020_Abstract](Input/Wang2020_Abstract.jpg)
+
+```{r Diabetes AKI data metabolomics, fig.width=4.5, fig.height=3}
+data.raw = read.xlsx("Input/peerj-08-9111-s004_Wang2020.xlsx", sheetName = " A vs B metabolomics results")
+annot = read.xlsx("Input/peerj-08-9111-s004_Wang2020.xlsx", sheetName = "raw data of pilot cohort", rowIndex = c(2:8, 10:15))
+data = data.raw %>%
+  select(Compounds, contains("AKI")) %>%
+  pivot_longer(-Compounds, names_to = "Patient", values_to = "Intensity") %>%
+  mutate(Disease = factor(str_extract(Patient, "NAKI|AKI"), levels = c("NAKI", "AKI"), labels = c("No AKI", "AKI")),
+         Operation = factor(str_extract(Patient, "A$|B$"), levels = c("A", "B"), labels = c("Pre-operative", "Post-operative")),
+         Group = factor(paste(Disease, Operation, sep = "_"), levels = c("No AKI_Pre-operative", "No AKI_Post-operative", "AKI_Pre-operative", "AKI_Post-operative")))%>%
+  filter(str_detect(Compounds, regex("UTP", ignore_case = T)))
+
+ggplot(data, aes(x = Group, y = Intensity, fill = Group, group = Group)) +
+  geom_boxplot(linewidth = 0.2, outlier.alpha = 0) + geom_jitter(width = 0.1, alpha = 0.6, size = 0.5) +
+  stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,4), c(3,4)), method = "t.test", label = "p.signif", hide.ns = TRUE, vjust = 0.55, step.increase = 0.065, tip.length = 0.02) +
+  ylab("Uridine triphosphate (UTP)\nIntensity") + xlab(NULL) +
+  scale_y_continuous(expand = c(0,0), limits = c(0,2E8)) +
+  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), strip.text.x = element_text(size = 6))
+ggsave("Output/DM-AKI-Patients_Boxplots.pdf", width = 4.5, height = 3)
+
+```
