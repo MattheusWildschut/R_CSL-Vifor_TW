@@ -1,6 +1,8 @@
 #Data integration for control, ADPKD and all datasets)
 
+library(spatstat)
 library(Seurat)
+library(Matrix)
 library(ggplot2)
 library(sctransform)
 library(harmony)
@@ -34,6 +36,10 @@ control.anchors <- FindIntegrationAnchors(object.list = control.list, normalizat
 saveRDS(control.anchors, "Input/RDS_Files/control_anchors.rds")
 control.anchors = readRDS("Input/RDS_Files/control_anchors.rds")
 cont <- IntegrateData(anchorset = control.anchors, normalization.method = "SCT")
+#
+saveRDS(cont, "Input/RDS_Files/cont.rds")
+cont = readRDS("Input/RDS_Files/cont.rds")
+#
 DefaultAssay(cont) <- "integrated"
 
 # visualization and clustering
@@ -41,6 +47,9 @@ cont <- ScaleData(cont, verbose = FALSE)
 cont <- RunPCA(cont, npcs = 30, verbose = FALSE)
 cont <- RunUMAP(cont, reduction = "pca", dims = 1:20)
 cont <- FindNeighbors(cont, reduction = "pca", dims = 1:20)
+# require(devtools)
+# install.packages('https://cran.r-project.org/src/contrib/Archive/spatstat/spatstat_1.64-1.tar.gz', repos=NULL,type="source")
+# install_version("Seurat", version = "4.0.0", repos = "http://cran.us.r-project.org", upgrade = "never")
 cont <- FindClusters(cont, resolution = 0.3)
 DimPlot(cont, reduction = "umap", label = TRUE)
 
@@ -211,3 +220,4 @@ levels(rnaAggr) <- c("PT","FR-PTC","PEC","ATL","TAL","DCT","CNT_PC","ICA","ICB",
 rnaAggr@meta.data[["celltype_all"]] <- rnaAggr@active.ident
 
 saveRDS(rnaAggr,"Input/RDS_Files/PKDContAggr.rds")
+

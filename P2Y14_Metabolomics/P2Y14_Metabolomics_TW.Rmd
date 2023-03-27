@@ -12,7 +12,7 @@ source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CS
 opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
-# ADPKD-group correlations {.tabset}
+# P2Y14 Metabolomics {.tabset}
 
 ## KPMP spatial metabolomics analyses
 

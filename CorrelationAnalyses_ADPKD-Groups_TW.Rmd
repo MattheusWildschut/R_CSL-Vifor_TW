@@ -52,11 +52,19 @@ max.data = as.data.frame(raw.data) %>%
   dplyr::summarise(across(everything(), max)) %>%
   column_to_rownames("Gene") %>% as.matrix
 
+# surfy = fread("Input/table_S3_surfaceome.csv", skip = 1)
+# compartments = fread("Input/human_compartment_integrated_full.tsv", col.names = c("Ensembl", "Gene", "GO.ID", "Compartment", "Score"))
+# compartments = compartments[compartments$Compartment == "Plasma membrane" & compartments$Score >= 4,]
+# surface = unique(c(surfy$`UniProt gene`, compartments$Gene))
+surface = sort(uniprot$`Gene Names (primary)`[str_detect(uniprot$`Subcellular location [CC]`, "Cell membrane")])
+
 data.cor = data.frame("Spearman" = cor(t(max.data), as.numeric(annot.pat$Group), method = "spearman"),
                "Pearson" = cor(t(max.data), as.numeric(annot.pat$Group), method = "pearson")) %>%
   as.data.frame %>% rownames_to_column("Gene") %>% arrange(desc(Spearman)) %>%
   mutate("Rank_Spearman" = rank(-Spearman), "Rank_Pearson" = rank(-Pearson),
-         "Description" = annot.genes$Description[match(Gene, annot.genes$Gene)])
+         "Description" = annot.genes$Description[match(Gene, annot.genes$Gene)],
+         "Surface" = factor(Gene %in% surface, levels = c(TRUE, FALSE), labels = c("Surface", "")))
+
 kable(data.cor) %>%
     kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 ```
@@ -135,8 +143,9 @@ fib.data = t(apply(fib.data, 1, scale))
 
 ha = HeatmapAnnotation(df = data.frame("Group" = annot.pat$Group),
                        col = list("Group" = setNames(viridis(5), levels(annot.pat$Group))), border = TRUE)
+set.seed(1234)
 {heat.fib = Heatmap(fib.data, top_annotation = ha, name = "Scaled expression",
-                   row_km = 3, row_km_repeats = 100, column_km = 3, column_km_repeats = 100,
+                   row_km = 4, row_km_repeats = 1000, column_km = 3, column_km_repeats = 1000,
                    row_names_gp = gpar(fontsize = 6), border = TRUE, rect_gp = gpar(col = "grey90", lwd = 0.1))
   as_ggplot(grid.grabExpr(draw(heat.fib)))}
 # ggsave("Output//FibrosisSignature_Heatmap_Scaled.pdf", width = 6, height = 14)
