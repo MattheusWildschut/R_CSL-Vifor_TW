@@ -23,8 +23,13 @@ annot.snRNA = fread("Input//GSE183277_Kidney_Healthy-Injury_Cell_Atlas_snCv3_Met
 ## file_name%22%2C%22order%22%3A%22asc%22%7D%5D&filters=%7B%22op%22%3A%22and%22%2C%22content%22%3A%5B%7B%22op%22%3A%22in
 ## %22%2C%22content%22%3A%7B%22field%22%3A%22dois%22%2C%22value%22%3A%5B%2210.48698%2F92nk-e805%22%5D%7D%7D%5D%7D
 data.scRNA = LoadH5Seurat("Input/521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat", assays = list(RNA = c("data", "counts")))
+data.scRNA@meta.data$class = data.scRNA@meta.data$ClusterClass
+
 # data.scRNA = data.scRNA %>% subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 50)
 data.snRNA = LoadH5Seurat("Input/c798e11b-bbde-45dd-bd91-487f27c93f8f_WashU-UCSD_HuBMAP_KPMP-Biopsy_10X-R_12032021.h5Seurat", assays = list(RNA = c("data", "counts")))
+data.snRNA@meta.data$diseasetype = pat.annot2$Tissue.Type[match(b$specimen_id, pat.annot2$Participant.ID)]
+data.snRNA@meta.data$SpecimenID = data.snRNA@meta.data$specimen_id
+
 # data.snRNA = data.snRNA %>% subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 50)
 fields.pat = data.frame("Field" = c("sampletype", "diseasetype", "age", "gender", "state", "tissuetype", "celltype")) %>%
   mutate(Description = annot.scRNA$Description[match(Field, annot.scRNA$Field)])
@@ -101,12 +106,12 @@ server = function(input, output, session) {
     stopApp()
   })
   data = reactive({
-    # get(paste0("data.", input$dataset))
-    data.scRNA
+    get(paste0("data.", input$dataset))
+    # data.scRNA
   })
   # Gene expression Server ---------
-  updateSelectizeInput(session, "gene", choices = sort(rownames(data.scRNA@assays$RNA@data)), 
-                       selected = "P2RY14", options = list(maxOptions = 100000), server = TRUE)
+  observe(updateSelectizeInput(session, "gene", choices = sort(rownames(data()@assays$RNA@data)), 
+                       selected = "P2RY14", options = list(maxOptions = 100000), server = TRUE))
   output$ui.celltype = renderUI({
     celltypes = unique(sort(as.character(unlist(data()@meta.data[,input$cell.grouping]))))
     pickerInput(inputId = "celltype",
@@ -121,7 +126,7 @@ server = function(input, output, session) {
     data.plot = data.frame("Expression" = data()@assays$RNA@data[input$gene,], #["SLC9B2",], #
                            "Disease" = data()@meta.data[,input$pat.grouping], #[,"condition.l1"], #
                            "Celltype" = data()@meta.data[,input$cell.grouping], #[,"subclass.l1"], #
-                           "Cellclass" = data()@meta.data$ClusterClass, #ClusterClass,# 
+                           "Cellclass" = data()@meta.data$class, #ClusterClass,# 
                            "Patient" = data()@meta.data$SpecimenID) %>% #orig.ident) %>% # 
       group_by(Disease) %>% dplyr::mutate(Disease = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
       group_by(Celltype) %>% dplyr::mutate(Celltype2 = paste0(Celltype, " (", length(Expression), ")"))
@@ -202,7 +207,7 @@ server = function(input, output, session) {
   output$plot.umap1 = renderPlot({
     # ggplot(data.umap(), aes(x = UMAP_1, UMAP_2, col = CellType)) +
     #   geom_point(size = 0.1) + theme_bw()
-    DimPlot(data.scRNA, reduction = "umap", group.by = input$cell.grouping)
+    DimPlot(data(), reduction = "umap", group.by = input$cell.grouping)
   })
   output$ui.plot.umap1 = renderUI({
     plotOutput("plot.umap1", height = 500, 
@@ -213,8 +218,8 @@ server = function(input, output, session) {
   })
   output$plot.umap2 = renderPlot({
     req(input$umap.celltypes, input$gene)
-    FeaturePlot(data.scRNA, reduction = "umap", features = input$gene, cols = c("grey95", viridis(3)),
-                cells = WhichCells(data.scRNA, expression = subclass.l1 %in% input$umap.celltypes))
+    FeaturePlot(data(), reduction = "umap", features = input$gene, cols = c("grey95", viridis(3)),
+                cells = WhichCells(data(), expression = subclass.l1 %in% input$umap.celltypes))
     # data.plot = filter(data.umap(), CellType %in% input$umap.celltypes)
     # ggplot(data.plot, aes(x = UMAP_1, UMAP_2, col = Expression,
     #                         text = paste0("Class: ", CellType, "\nSubtype: ", CellType2))) +
@@ -341,3 +346,7 @@ FeaturePlot(data.scRNA, reduction = "umap", features = "P2RY14", cols = c("grey9
             cells = WhichCells(data.scRNA, expression = subclass.l1=="Immune"))
 
 as.formula("a")
+
+a = data.scRNA@meta.data
+b = data.snRNA@meta.data
+pat.annot2 = read.csv("Input/72ec8f42-750f-4e1b-bda9-7300d4de1365_20221208_OpenAccessClinicalData.csv")
