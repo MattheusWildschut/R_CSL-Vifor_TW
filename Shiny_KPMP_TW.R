@@ -14,6 +14,8 @@ library(SeuratDisk)
   # subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
 annot.scRNA = fread("Input//GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Metadata_Field_Descriptions.txt.gz") 
 annot.snRNA = fread("Input//GSE183277_Kidney_Healthy-Injury_Cell_Atlas_snCv3_Metadata_Field_Descriptions.txt.gz")
+pat.annot2 = read.csv("Input/72ec8f42-750f-4e1b-bda9-7300d4de1365_20221208_OpenAccessClinicalData.csv")
+
 # fields.pat = data.frame("Field" = c(paste0("condition", c(".long", ".l1", ".l2", ".l3")), "patient", "sex", "race")) %>%
 #   mutate(Description = annot.scRNA$Description[match(Field, annot.scRNA$Field)])
 # fields.cell = data.frame("Field" = c("class", paste0("subclass", c(".l1", ".l2", ".l3", ".full")), "state.l1", "state.l2")) %>%
@@ -27,7 +29,7 @@ data.scRNA@meta.data$class = data.scRNA@meta.data$ClusterClass
 
 # data.scRNA = data.scRNA %>% subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 50)
 data.snRNA = LoadH5Seurat("Input/c798e11b-bbde-45dd-bd91-487f27c93f8f_WashU-UCSD_HuBMAP_KPMP-Biopsy_10X-R_12032021.h5Seurat", assays = list(RNA = c("data", "counts")))
-data.snRNA@meta.data$diseasetype = pat.annot2$Tissue.Type[match(b$specimen_id, pat.annot2$Participant.ID)]
+data.snRNA@meta.data$diseasetype = pat.annot2$Tissue.Type[match(data.snRNA@meta.data$specimen_id, pat.annot2$Participant.ID)]
 data.snRNA@meta.data$SpecimenID = data.snRNA@meta.data$specimen_id
 
 # data.snRNA = data.snRNA %>% subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 50)
@@ -40,8 +42,10 @@ fields.cell = data.frame("Field" = c("ClusterClass", paste0("subclass", c(".l1",
 ui = {fluidPage(
   useShinyjs(),
   titlePanel("CSL-Vifor_KPMP-browser_TW"),
-  sidebarLayout(
-    sidebarPanel(
+  tabsetPanel(selected = "Gene_List",
+    tabPanel("Single_Gene",
+             sidebarLayout(
+               sidebarPanel(
                  radioGroupButtons(inputId = "dataset",
                                    label = "Choose scRNA-seq or snRNA-seq dataset",
                                    choices = c("scRNA", "snRNA"),
@@ -60,9 +64,9 @@ ui = {fluidPage(
                              label = "Select cell grouping", 
                              choices = fields.cell$Field,
                              # choicesOpt = list(subtext = fields.cell$Description),
-                             selected = "subclass.l1"),
+                             selected = "subclass.l2"),
                  materialSwitch(inputId = "cell.class",
-                                label = "Split cell types by class",
+                                label = strong("Split cell types by class"),
                                 value = TRUE,
                                 status = "primary"),
                  uiOutput(outputId = "ui.celltype"),
@@ -81,21 +85,55 @@ ui = {fluidPage(
                  downloadBttn(outputId = "download.patient",
                               label = list(icon("file-pdf"), "Download Plot 2"),
                               color = "danger", size = "sm")
-    ),
-    mainPanel(
-      tabsetPanel(
-        tabPanel("BubblePlots",
-                 plotOutput("plot.celltype", height = 1000),
-                 uiOutput("ui.plot.patient")),
-        tabPanel("UMAP", 
-                 div(
-                   div(style="display: inline-block; width: 700px; vertical-align:top", 
-                       uiOutput("ui.plot.umap1")),
-                   div(style="display: inline-block; width: 525px; vertical-align:top", 
-                       plotOutput("plot.umap2", height = 500, width = 525))
+               ),
+               mainPanel(
+                 tabsetPanel(
+                   tabPanel("BubblePlots",
+                            plotOutput("plot.celltype", height = 1000),
+                            uiOutput("ui.plot.patient")),
+                   tabPanel("UMAP", 
+                            div(
+                              div(style="display: inline-block; width: 700px; vertical-align:top", 
+                                  uiOutput("ui.plot.umap1")),
+                              div(style="display: inline-block; width: 525px; vertical-align:top", 
+                                  plotOutput("plot.umap2", height = 500, width = 525))
+                            )
+                   )
                  )
-        )
-      )
+               )
+             )
+    ),
+    tabPanel("Gene_List",
+             sidebarLayout(
+               sidebarPanel(
+                 pickerInput(inputId = "gene.list",
+                             label = "Select multiple genes",
+                             choices = NULL,
+                             multiple = TRUE,
+                             options = list(`actions-box` = TRUE)),
+                 pickerInput(inputId = "pat.grouping.list",
+                             label = "Select patient grouping", 
+                             choices = c("sampletype", "diseasetype", "age", "gender", "state", "tissuetype", "celltype"),
+                             # choicesOpt = list(subtext = fields.pat$Description),
+                             selected = "diseasetype"), #"condition.l1"
+                 pickerInput(inputId = "cell.grouping.list",
+                             label = "Select cell grouping", 
+                             choices = c("ClusterClass", "subclass.l1", "subclass.l2", "celltype"), #fields.cell$Field,
+                             # choicesOpt = list(subtext = fields.cell$Description),
+                             selected = "subclass.l2"),
+                 uiOutput(outputId = "ui.celltype.list"),
+                 materialSwitch(inputId = "reorder.list",
+                                label = strong("Reorder patients by cell counts"),
+                                value = FALSE,
+                                status = "primary"),
+                 downloadBttn(outputId = "download.mult",
+                              label = list(icon("file-pdf"), "Download Plot"),
+                              color = "danger", size = "sm")
+               ),
+               mainPanel(
+                 uiOutput("ui.plot.mult")
+               )
+             )
     )
   )
 )}
@@ -112,6 +150,9 @@ server = function(input, output, session) {
   # Gene expression Server ---------
   observe(updateSelectizeInput(session, "gene", choices = sort(rownames(data()@assays$RNA@data)), 
                        selected = "P2RY14", options = list(maxOptions = 100000), server = TRUE))
+  observe(updatePickerInput(session, "gene.list", choices = sort(rownames(data()@assays$RNA@data)), 
+                               selected = c("P2RY14", "CLEC4C", "IL3RA", "TCF4", "IRF7", "IRF8", "CBFA2T3", "BCL11A"),
+                               options = list(maxOptions = 100000)))
   output$ui.celltype = renderUI({
     celltypes = unique(sort(as.character(unlist(data()@meta.data[,input$cell.grouping]))))
     pickerInput(inputId = "celltype",
@@ -120,6 +161,13 @@ server = function(input, output, session) {
                 multiple = TRUE,
                 selected = NULL,
                 options = list(`actions-box` = TRUE))
+  })
+  output$ui.celltype.list = renderUI({
+    celltypes = unique(sort(as.character(unlist(data()@meta.data[,input$cell.grouping.list]))))
+    pickerInput(inputId = "celltype.list",
+                label = "Select single cell type of interest",
+                choices = celltypes,
+                selected = "pDC")
   })
   data.celltype = reactive({
     req(input$gene, input$pat.grouping, input$cell.grouping)
@@ -149,6 +197,19 @@ server = function(input, output, session) {
                        SelCells = length(Expression[Celltype %in% input$celltype])/length(Expression))
     
     list("data.patient" = data.patient, "data.num" = data.num)
+  })
+  data.mult = reactive({
+    req(input$gene.list)
+    data.mult = data()@assays$RNA@data[input$gene.list, , drop = FALSE] %>%
+      t %>% as.data.frame %>%
+      cbind(data()@meta.data) %>% mutate(Celltype = unlist(data()@meta.data[,input$cell.grouping.list])) %>%
+      pivot_longer(cols = 1:length(input$gene.list), names_to = "Gene", values_to = "Expression") %>%
+      mutate(Patient = str_remove(orig.ident, "a$|b$|c$")) %>%
+      group_by(diseasetype, Patient, Celltype, Gene) %>%
+      dplyr::summarise(Count = length(Expression),
+                       Percentage = sum(Expression>0)/Count,
+                       Expression = mean(Expression)) %>%
+      group_by(diseasetype) %>% dplyr::mutate(Disease = paste0(diseasetype, " (", n_distinct(Patient), ")")) %>% ungroup
   })
   # data.umap = reactive({
   #   req(input$gene)
@@ -203,6 +264,45 @@ server = function(input, output, session) {
 
       bar.plot / dot.plot + plot_layout(heights = c(2,0.75+0.25*length(input$celltype)))
   })
+  plot.mult = reactive({
+    req(input$celltype.list, input$cell.grouping.list)
+    data.mult = data.mult() %>% group_by(Patient) %>% dplyr::mutate(AllCells = sum(Count, na.rm = TRUE)/n_distinct(Gene))
+    data.plot = data.mult() %>%
+      filter(Celltype == input$celltype.list) %>%
+      full_join(unique(data.mult[,c("Disease", "Patient", "Gene", "AllCells")]), .,
+                by = join_by(Disease, Patient, Gene)) %>%
+      group_by(Patient) %>% dplyr::mutate(CellCounts = sum(Count, na.rm = TRUE)/n_distinct(Gene),
+                                          Patient = paste0(Patient, " (", CellCounts, "/", AllCells, ")"))
+      
+    dot.plot = ggplot(data.plot, aes(x = if(input$reorder.list) reorder(Patient, -CellCounts) else Patient, y = Gene)) +
+      geom_point(aes(size = Percentage, col = Expression)) +
+      facet_grid(. ~ Disease, scales = "free", space = "free", switch = "both") +
+      scale_size_continuous(labels = scales::percent, limits = c(0.0000001, max(c(0, data.plot$Percentage), na.rm = TRUE)), guide = guide_legend(direction = "vertical")) +
+      scale_color_viridis(guide = guide_colorbar(direction = "vertical")) +
+      xlab("Patient") +
+      theme_bw() + theme(text = element_text(size = 18), strip.text.y.left = element_text(angle = 0), legend.position = "bottom",
+                         axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+    
+    data.num = data.mult() %>% 
+      select(Disease, Patient, Count, Celltype) %>% distinct %>%
+      group_by(Disease, Patient) %>% 
+      dplyr::summarize(AllCells = sum(Count),
+                       CellCounts = sum(Count[Celltype %in% input$celltype.list]),
+                       SelCells = sum(Count[Celltype %in% input$celltype.list])/sum(Count))
+    bar.plot = ggplot(data.num, aes(x = if(input$reorder.list) reorder(Patient, -CellCounts) else Patient)) +
+      geom_col(aes(y = AllCells), fill = "black", width = 0.4, position = position_nudge(x = -0.2)) +
+      geom_col(aes(y = SelCells*max(AllCells)/max(SelCells)), fill = "grey80", width = 0.4, position = position_nudge(x = 0.2)) +
+      facet_grid(. ~ Disease, scales = "free", space = "free", switch = "both") +
+      scale_y_continuous(name = "All cells", expand = c(0,0), 
+                         sec.axis = sec_axis(~./max(data.num$AllCells)*max(data.num$SelCells), name = paste("Selected cell fraction"), labels = scales::percent)) +
+      theme_bw() + theme(text = element_text(size = 18), 
+                         axis.title.y.right = element_text(color = "grey80"), axis.text.y.right = element_text(color = "grey80"), axis.ticks.y.right = element_line(color = "grey80"),
+                         axis.ticks.x = element_blank(), axis.text.x = element_blank(), axis.title.x = element_blank(), 
+                         strip.background = element_blank(), strip.text.x = element_blank())
+    
+
+    bar.plot / dot.plot + plot_layout(heights = c(2,0.75+0.25*length(input$gene.list)))
+  })
   # output$plot.umap1 = renderPlot({
   output$plot.umap1 = renderPlot({
     # ggplot(data.umap(), aes(x = UMAP_1, UMAP_2, col = CellType)) +
@@ -239,6 +339,12 @@ server = function(input, output, session) {
   output$ui.plot.patient = renderUI({
     plotOutput("plot.patient", height = 450+20*length(input$celltype))
   })
+  output$plot.mult = renderPlot({
+    plot.mult()
+  })
+  output$ui.plot.mult = renderUI({
+    plotOutput("plot.mult", height = 500+20*length(input$gene.list))
+  })
   output$download.xlsx = downloadHandler(
     filename = function() { paste0('Excel-data_KPMP-browser_', Sys.Date(), '.xlsx') },
     content = function(file) {
@@ -254,12 +360,12 @@ server = function(input, output, session) {
       saveWorkbook(wb, file)
   })
   output$download.celltype = downloadHandler(
-    filename = function() { paste0("Celltype-plot_", input$gene, "_", input$pat.grouping, "-", input$cell.grouping, "_", Sys.Date(), '.pdf') },
+    filename = function() { paste0("Celltype-plot_", input$dataset, "_", input$gene, "_", input$pat.grouping, "-", input$cell.grouping, "_", Sys.Date(), '.pdf') },
     content = function(file) {
       ggsave(file, plot.celltype(), height = 16, width = 9)
     })
   output$download.patient = downloadHandler(
-    filename = function() { paste0("Patient-plot_", input$gene, "_", input$pat.grouping, "-", input$cell.grouping, "_", Sys.Date(), '.pdf') },
+    filename = function() { paste0("Patient-plot_", input$dataset, "_", input$gene, "_", input$pat.grouping, "-", input$cell.grouping, "_", Sys.Date(), '.pdf') },
     content = function(file) {
       if(!is.null(input$celltype)){
         ggsave(file, plot.patient(), height = 8, width = 10)  
@@ -268,6 +374,12 @@ server = function(input, output, session) {
       }
     }
     )
+  output$download.mult = downloadHandler(
+    filename = function() { paste0("Patient-plot_", input$dataset, "_", input$gene, "_", input$pat.grouping, "-", input$cell.grouping, "_", Sys.Date(), '.pdf') },
+    content = function(file) {
+      ggsave(file, plot.mult(), height = 8 + 0.15*length(input$gene.list), width = 14)
+    }
+  )
   observe({
     if(is.null(input$celltype)) shinyjs::hide("download.patient_bttn") else shinyjs::show("download.patient_bttn")
   })
@@ -306,7 +418,7 @@ data.sum2 = left_join(data.sum, data.avg, by = c("Disease", "Celltype")) %>%
   mutate(Count2 = Count/as.numeric(str_extract(Celltype2, "(?<=\\()[:digit:]+")))
 
 
-ggplot(data.sum2, aes(x = Disease2, y = Celltype2)) +
+a = ggplot(data.sum2, aes(x = Disease2, y = Celltype2)) +
   geom_tile(aes(fill = Count2), width = 0.4, col = "white") +
   scale_fill_gradient(name = "Percent cells", low = "white", high = "grey40", guide = guide_colorbar(direction = "vertical"), labels = scales::percent, limits = c(0.0000001, max(data.sum2$Count2))) +
   geom_point(aes(col = Expression, size = Percentage)) + #size = Percentage, 
