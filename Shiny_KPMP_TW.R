@@ -7,6 +7,7 @@ source("SourceFile_TW.R")
 
 library(Seurat)
 library(SeuratDisk)
+library(scCustomize)
 
 # data.scRNA = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seurat_03282022.h5Seurat", assays = list(RNA = "data")) #%>%
   # subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
@@ -120,7 +121,7 @@ ui = {fluidPage(
                              label = "Select cell grouping", 
                              choices = c("ClusterClass", "subclass.l1", "subclass.l2", "celltype"), #fields.cell$Field,
                              # choicesOpt = list(subtext = fields.cell$Description),
-                             selected = "subclass.l2"),
+                             selected = "subclass.l1"),
                  uiOutput(outputId = "ui.celltype.list"),
                  materialSwitch(inputId = "reorder.list",
                                 label = strong("Reorder patients by cell counts"),
@@ -283,6 +284,44 @@ server = function(input, output, session) {
       theme_bw() + theme(text = element_text(size = 18), strip.text.y.left = element_text(angle = 0), legend.position = "bottom",
                          axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
     
+    data.scRNA.pct = Percent_Expressing(data.scRNA, features = input$gene.list,
+                                        group_by = input$cell.grouping.list, split_by = input$pat.grouping.list) %>%
+      rownames_to_column("Gene") %>%
+      pivot_longer(cols = 2:ncol(.), values_to = "Percentage") %>%
+      mutate(Disease = str_split(name, "_", simplify = TRUE)[,2], Celltype = str_split(name, "_", simplify = TRUE)[,1],
+             Percentage = Percentage/100) %>%
+      select(-name) %>%
+      mutate(Celltype = as.character(factor(Celltype, levels = sort(unique(Celltype)), labels = sort(levels(meta.data[,input$cell.grouping.list])))))
+    
+    meta.data = data.scRNA@meta.data %>%
+      mutate(Patient = str_remove(orig.ident, "a$|b$|c$"),
+             Celltype = .[, input$cell.grouping.list],
+             Disease = .[, input$pat.grouping.list])
+    data.scRNA.counts = meta.data %>%
+      dplyr::count(Disease, Celltype, .drop = FALSE, name = "CellCounts") %>%
+      left_join(dplyr::count(meta.data, Disease, name = "AllCells"), by = "Disease") %>%
+      left_join(meta.data %>% group_by(Disease) %>% dplyr::summarise("Patients" = n_distinct(Patient)), by = "Disease")
+    
+    data.scRNA.avg = AverageExpression(subset(data.scRNA, features = input$gene.list),
+                                       group.by = c(input$cell.grouping.list, input$pat.grouping.list))[[1]]
+
+    data.disease = data.scRNA.avg[input$gene.list, , drop = FALSE] %>%
+      t %>% as.data.frame %>%
+      data.frame(., "Disease" = str_split_fixed(colnames(data.scRNA.avg), "_", 2)[,2],
+                 "Celltype" = str_split_fixed(colnames(data.scRNA.avg), "_", 2)[,1]) %>%
+      pivot_longer(cols = 1:length(input$gene.list), names_to = "Gene", values_to = "Expression") %>%
+      full_join(data.scRNA.pct, by = c("Gene", "Disease", "Celltype")) %>%
+      full_join(data.scRNA.counts, by = c("Disease", "Celltype")) %>%
+      filter(Celltype == input$celltype.list) %>%
+      mutate(Disease = paste0(Disease, " (", CellCounts, "/", AllCells, ")"))
+    
+    disease.plot = ggplot(data.disease, aes(x = Disease, y = Gene)) +
+      geom_point(aes(size = Percentage, col = Expression)) +
+      scale_size_continuous(labels = scales::percent, limits = c(0.0000001, max(c(0, data.disease$Percentage), na.rm = TRUE)), guide = guide_legend(direction = "vertical")) +
+      scale_color_viridis(guide = guide_colorbar(direction = "vertical")) +
+      theme_bw() + theme(text = element_text(size = 18), strip.text.y.left = element_text(angle = 0), legend.position = "bottom",
+                         axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+    
     data.num = data.mult() %>% 
       select(Disease, Patient, Count, Celltype) %>% distinct %>%
       group_by(Disease, Patient) %>% 
@@ -301,7 +340,9 @@ server = function(input, output, session) {
                          strip.background = element_blank(), strip.text.x = element_blank())
     
 
-    bar.plot / dot.plot + plot_layout(heights = c(2,0.75+0.25*length(input$gene.list)))
+    (disease.plot | 
+        (bar.plot / dot.plot) + plot_layout(heights = c(2,0.75+0.25*length(input$gene.list)))) +
+      plot_layout(widths = c(1,6))
   })
   # output$plot.umap1 = renderPlot({
   output$plot.umap1 = renderPlot({
@@ -377,7 +418,7 @@ server = function(input, output, session) {
   output$download.mult = downloadHandler(
     filename = function() { paste0("Patient-plot_", input$dataset, "_", input$gene, "_", input$pat.grouping, "-", input$cell.grouping, "_", Sys.Date(), '.pdf') },
     content = function(file) {
-      ggsave(file, plot.mult(), height = 8 + 0.15*length(input$gene.list), width = 14)
+      ggsave(file, plot.mult(), height = 8 + 0.15*length(input$gene.list), width = 18)
     }
   )
   observe({
@@ -393,6 +434,9 @@ data.scRNA.raw = LoadH5Seurat("Input\\521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMI
 data.scRNA = data.scRNA.raw %>% subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 5)
 
 d = AverageExpression(data.scRNA, group.by = c("subclass.l2", "diseasetype"))[[1]]
+data.avg = data.frame("Expression" = d["IRF7",],
+                      "Disease" = str_split_fixed(colnames(d), "_", 2)[,2],
+                      "Celltype" = str_split_fixed(colnames(d), "_", 2)[,1])
 
 data.plot = data.frame("Expression" = data.scRNA@assays$RNA@data["P2RY14",], #["SLC9B2",], #
                        "Disease" = data.scRNA@meta.data$diseasetype, #[,"condition.l1"], #
@@ -409,7 +453,7 @@ data.sum = data.plot %>%
   group_by(Disease, Disease2, Celltype, Celltype2, Cellclass) %>% 
   dplyr::summarize(Count = n(), Percentage = sum(Expression>0)/n())
 
-data.avg = data.frame("Expression" = d["P2RY14",],
+data.avg = data.frame("Expression" = d["IRF7",],
                        "Disease" = str_split_fixed(colnames(d), "_", 2)[,2],
                        "Celltype" = str_split_fixed(colnames(d), "_", 2)[,1])
 
