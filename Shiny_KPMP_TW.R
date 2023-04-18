@@ -25,13 +25,15 @@ pat.annot2 = read.csv("Input/72ec8f42-750f-4e1b-bda9-7300d4de1365_20221208_OpenA
 ## Data from https://atlas.kpmp.org/repository/?facetTab=files&files_size=60&files_sort=%5B%7B%22field%22%3A%22
 ## file_name%22%2C%22order%22%3A%22asc%22%7D%5D&filters=%7B%22op%22%3A%22and%22%2C%22content%22%3A%5B%7B%22op%22%3A%22in
 ## %22%2C%22content%22%3A%7B%22field%22%3A%22dois%22%2C%22value%22%3A%5B%2210.48698%2F92nk-e805%22%5D%7D%7D%5D%7D
-data.scRNA = LoadH5Seurat("Input/521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat", assays = list(RNA = c("data", "counts")))
+data.scRNA = LoadH5Seurat("Input/521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat")
 data.scRNA@meta.data$class = data.scRNA@meta.data$ClusterClass
+data.scRNA@meta.data$Patient = str_remove(data.scRNA@meta.data$orig.ident, "a$|b$|c$")
 
 # data.scRNA = data.scRNA %>% subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 50)
 data.snRNA = LoadH5Seurat("Input/c798e11b-bbde-45dd-bd91-487f27c93f8f_WashU-UCSD_HuBMAP_KPMP-Biopsy_10X-R_12032021.h5Seurat", assays = list(RNA = c("data", "counts")))
 data.snRNA@meta.data$diseasetype = pat.annot2$Tissue.Type[match(data.snRNA@meta.data$specimen_id, pat.annot2$Participant.ID)]
 data.snRNA@meta.data$SpecimenID = data.snRNA@meta.data$specimen_id
+data.snRNA@meta.data$Patient = str_remove(data.snRNA@meta.data$specimen_id, "a$|b$|c$")
 
 # data.snRNA = data.snRNA %>% subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 50)
 fields.pat = data.frame("Field" = c("sampletype", "diseasetype", "age", "gender", "state", "tissuetype", "celltype")) %>%
@@ -121,8 +123,12 @@ ui = {fluidPage(
                              label = "Select cell grouping", 
                              choices = c("ClusterClass", "subclass.l1", "subclass.l2", "celltype"), #fields.cell$Field,
                              # choicesOpt = list(subtext = fields.cell$Description),
-                             selected = "subclass.l1"),
+                             selected = "subclass.l2"),
                  uiOutput(outputId = "ui.celltype.list"),
+                 materialSwitch(inputId = "scaling.list",
+                                label = strong("Scale expression values per gene"),
+                                value = FALSE,
+                                status = "success"),
                  materialSwitch(inputId = "reorder.list",
                                 label = strong("Reorder patients by cell counts"),
                                 value = FALSE,
@@ -205,7 +211,6 @@ server = function(input, output, session) {
       t %>% as.data.frame %>%
       cbind(data()@meta.data) %>% mutate(Celltype = unlist(data()@meta.data[,input$cell.grouping.list])) %>%
       pivot_longer(cols = 1:length(input$gene.list), names_to = "Gene", values_to = "Expression") %>%
-      mutate(Patient = str_remove(orig.ident, "a$|b$|c$")) %>%
       group_by(diseasetype, Patient, Celltype, Gene) %>%
       dplyr::summarise(Count = length(Expression),
                        Percentage = sum(Expression>0)/Count,
@@ -265,54 +270,76 @@ server = function(input, output, session) {
 
       bar.plot / dot.plot + plot_layout(heights = c(2,0.75+0.25*length(input$celltype)))
   })
+  ## plot.mult ---------------------------------
   plot.mult = reactive({
     req(input$celltype.list, input$cell.grouping.list)
-    data.mult = data.mult() %>% group_by(Patient) %>% dplyr::mutate(AllCells = sum(Count, na.rm = TRUE)/n_distinct(Gene))
-    data.plot = data.mult() %>%
-      filter(Celltype == input$celltype.list) %>%
-      full_join(unique(data.mult[,c("Disease", "Patient", "Gene", "AllCells")]), .,
-                by = join_by(Disease, Patient, Gene)) %>%
-      group_by(Patient) %>% dplyr::mutate(CellCounts = sum(Count, na.rm = TRUE)/n_distinct(Gene),
-                                          Patient = paste0(Patient, " (", CellCounts, "/", AllCells, ")"))
-      
-    dot.plot = ggplot(data.plot, aes(x = if(input$reorder.list) reorder(Patient, -CellCounts) else Patient, y = Gene)) +
-      geom_point(aes(size = Percentage, col = Expression)) +
-      facet_grid(. ~ Disease, scales = "free", space = "free", switch = "both") +
-      scale_size_continuous(labels = scales::percent, limits = c(0.0000001, max(c(0, data.plot$Percentage), na.rm = TRUE)), guide = guide_legend(direction = "vertical")) +
-      scale_color_viridis(guide = guide_colorbar(direction = "vertical")) +
-      xlab("Patient") +
-      theme_bw() + theme(text = element_text(size = 18), strip.text.y.left = element_text(angle = 0), legend.position = "bottom",
-                         axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
-    
-    data.scRNA.pct = Percent_Expressing(data.scRNA, features = input$gene.list,
-                                        group_by = input$cell.grouping.list, split_by = input$pat.grouping.list) %>%
-      rownames_to_column("Gene") %>%
-      pivot_longer(cols = 2:ncol(.), values_to = "Percentage") %>%
-      mutate(Disease = str_split(name, "_", simplify = TRUE)[,2], Celltype = str_split(name, "_", simplify = TRUE)[,1],
-             Percentage = Percentage/100) %>%
-      select(-name) %>%
-      mutate(Celltype = as.character(factor(Celltype, levels = sort(unique(Celltype)), labels = sort(levels(meta.data[,input$cell.grouping.list])))))
-    
-    meta.data = data.scRNA@meta.data %>%
-      mutate(Patient = str_remove(orig.ident, "a$|b$|c$"),
-             Celltype = .[, input$cell.grouping.list],
+    data = data()
+    data@meta.data = data@meta.data %>%
+      mutate(Celltype = .[, input$cell.grouping.list],
              Disease = .[, input$pat.grouping.list])
-    data.scRNA.counts = meta.data %>%
-      dplyr::count(Disease, Celltype, .drop = FALSE, name = "CellCounts") %>%
-      left_join(dplyr::count(meta.data, Disease, name = "AllCells"), by = "Disease") %>%
-      left_join(meta.data %>% group_by(Disease) %>% dplyr::summarise("Patients" = n_distinct(Patient)), by = "Disease")
-    
-    data.scRNA.avg = AverageExpression(subset(data.scRNA, features = input$gene.list),
-                                       group.by = c(input$cell.grouping.list, input$pat.grouping.list))[[1]]
+    data.sel = subset(data, Celltype == input$celltype.list) %>%
+      ScaleData(features = rownames(.))
 
-    data.disease = data.scRNA.avg[input$gene.list, , drop = FALSE] %>%
-      t %>% as.data.frame %>%
-      data.frame(., "Disease" = str_split_fixed(colnames(data.scRNA.avg), "_", 2)[,2],
-                 "Celltype" = str_split_fixed(colnames(data.scRNA.avg), "_", 2)[,1]) %>%
-      pivot_longer(cols = 1:length(input$gene.list), names_to = "Gene", values_to = "Expression") %>%
-      full_join(data.scRNA.pct, by = c("Gene", "Disease", "Celltype")) %>%
-      full_join(data.scRNA.counts, by = c("Disease", "Celltype")) %>%
-      filter(Celltype == input$celltype.list) %>%
+    data.pct.pat = Percent_Expressing(data.sel, features = input$gene.list,
+                                      group_by = "Patient") %>%
+      `colnames<-`(str_replace(str_remove(colnames(.), "^X"), "\\.", "-")) %>%
+      rownames_to_column("Gene") %>%
+      pivot_longer(cols = 2:ncol(.), names_to = "Patient", values_to = "Percentage") %>%
+      mutate(Percentage = Percentage/100)
+    
+    data.counts.pat = data@meta.data %>%
+      dplyr::count(Patient, Celltype, .drop = FALSE, name = "CellCounts") %>%
+      left_join(dplyr::count(data@meta.data, Patient, name = "AllCells"), by = "Patient") %>%
+      left_join(data@meta.data %>% group_by(Disease) %>% dplyr::mutate("Patients" = n_distinct(Patient)) %>%
+                  dplyr::select(Patient, Patients) %>% distinct, by = "Patient") %>%
+      full_join(data.frame("Gene" = rep(input$gene.list, each = length(unique(data@meta.data$Patient))),
+                           "Patient" = unique(data@meta.data$Patient)), by = "Patient", multiple = "all") %>%
+      filter(Celltype == input$celltype.list)
+    
+    data.avg.pat = AverageExpression(subset(data.sel, features = input$gene.list),
+                                     group.by = "Patient",
+                                     slot = ifelse(input$scaling.list, "scale.data", "data"))[[1]]
+
+    data.patient = data.avg.pat %>%
+      t %>% as.data.frame %>% `colnames<-`(input$gene.list) %>%
+      rownames_to_column("Patient") %>%
+      pivot_longer(cols = 2:(length(input$gene.list)+1), names_to = "Gene", values_to = "Expression") %>%
+      full_join(data.pct.pat, by = c("Gene", "Patient")) %>%
+      full_join(data.counts.pat, by = c("Gene", "Patient")) %>%
+      mutate(Patient = paste0(Patient, " (", CellCounts, "/", AllCells, ")"),
+             Disease = paste0(Disease, " (", Patients, ")"))
+
+    patient.plot = ggplot(data.patient, aes(x = if(input$reorder.list) reorder(Patient, -CellCounts) else Patient, y = Gene)) +
+      geom_point(aes(size = Percentage, col = Expression)) +
+      facet_grid(. ~Disease, scales = "free", space = "free", switch = "x") +
+      scale_size_continuous(labels = scales::percent, limits = c(0.0000001, max(c(0, data.patient$Percentage), na.rm = TRUE)), guide = guide_legend(direction = "vertical")) +
+      scale_color_viridis(guide = guide_colorbar(direction = "vertical")) +
+      theme_bw() + theme(text = element_text(size = 18), strip.text.y.left = element_text(angle = 0), legend.position = "bottom",
+                         axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + xlab("Patient")
+
+    data.pct.dis = Percent_Expressing(data.sel, features = input$gene.list,
+                                      group_by = "Disease") %>%
+      `colnames<-`(str_replace(colnames(.), "\\.", " ")) %>%
+      rownames_to_column("Gene") %>%
+      pivot_longer(cols = 2:ncol(.), names_to = "Disease", values_to = "Percentage") %>%
+      mutate(Percentage = Percentage/100)
+    
+    data.counts.dis = data@meta.data %>%
+      dplyr::count(Disease, Celltype, .drop = FALSE, name = "CellCounts") %>%
+      left_join(dplyr::count(data@meta.data, Disease, name = "AllCells"), by = "Disease") %>%
+      left_join(data@meta.data %>% group_by(Disease) %>% dplyr::summarise("Patients" = n_distinct(Patient)), by = "Disease") %>%
+      filter(Celltype == input$celltype.list)
+    
+    data.avg.dis = AverageExpression(subset(data.sel, features = input$gene.list), 
+                                     group.by = "Disease", 
+                                     slot = ifelse(input$scaling.list, "scale.data", "data"))[[1]]
+
+    data.disease = data.avg.dis %>%
+      t %>% as.data.frame %>% `colnames<-`(input$gene.list) %>%
+      rownames_to_column("Disease") %>%
+      pivot_longer(cols = 2:(length(input$gene.list)+1), names_to = "Gene", values_to = "Expression") %>%
+      full_join(data.pct.dis, by = c("Gene", "Disease")) %>%
+      full_join(data.counts.dis, by = c("Disease")) %>%
       mutate(Disease = paste0(Disease, " (", CellCounts, "/", AllCells, ")"))
     
     disease.plot = ggplot(data.disease, aes(x = Disease, y = Gene)) +
@@ -341,7 +368,7 @@ server = function(input, output, session) {
     
 
     (disease.plot | 
-        (bar.plot / dot.plot) + plot_layout(heights = c(2,0.75+0.25*length(input$gene.list)))) +
+        (bar.plot / patient.plot) + plot_layout(heights = c(2,0.75+0.25*length(input$gene.list)))) +
       plot_layout(widths = c(1,6))
   })
   # output$plot.umap1 = renderPlot({
@@ -429,80 +456,14 @@ server = function(input, output, session) {
 ## App ----------------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
 
-
-data.scRNA.raw = LoadH5Seurat("Input\\521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat", assays = list(RNA = c("data", "counts")))
-data.scRNA = data.scRNA.raw %>% subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 5)
-
-d = AverageExpression(data.scRNA, group.by = c("subclass.l2", "diseasetype"))[[1]]
-data.avg = data.frame("Expression" = d["IRF7",],
-                      "Disease" = str_split_fixed(colnames(d), "_", 2)[,2],
-                      "Celltype" = str_split_fixed(colnames(d), "_", 2)[,1])
-
-data.plot = data.frame("Expression" = data.scRNA@assays$RNA@data["P2RY14",], #["SLC9B2",], #
-                       "Disease" = data.scRNA@meta.data$diseasetype, #[,"condition.l1"], #
-                       "Celltype" = data.scRNA@meta.data$subclass.l2, #[,"subclass.l1"], #
-                       "Cellclass" = as.character(data.scRNA@meta.data$subclass.l1), #ClusterClass,# 
-                       "Patient" = data.scRNA@meta.data$SpecimenID) %>% #orig.ident) %>% # 
-  group_by(Disease) %>% dplyr::mutate(Disease2 = paste0(Disease, " (", n_distinct(Patient), ")")) %>%
-  group_by(Celltype) %>% dplyr::mutate(Celltype2 = paste0(Celltype, " (", length(Expression), ")"))# %>%
-  # filter(Celltype2 %in% c("cDC (1708)", "pDC (207)"))
-  # filter(Celltype2 == "pDC (207)" & Disease == "LivingDonor (20)") %>%
-  # mutate(LOG = 2^Expression)
-
-data.sum = data.plot %>%
-  group_by(Disease, Disease2, Celltype, Celltype2, Cellclass) %>% 
-  dplyr::summarize(Count = n(), Percentage = sum(Expression>0)/n())
-
-data.avg = data.frame("Expression" = d["IRF7",],
-                       "Disease" = str_split_fixed(colnames(d), "_", 2)[,2],
-                       "Celltype" = str_split_fixed(colnames(d), "_", 2)[,1])
-
-data.sum2 = left_join(data.sum, data.avg, by = c("Disease", "Celltype")) %>%
-  # rbind(data.sum %>% mutate(Percentage = Percentage*n))
-  mutate(Count2 = Count/as.numeric(str_extract(Celltype2, "(?<=\\()[:digit:]+")))
-
-
-a = ggplot(data.sum2, aes(x = Disease2, y = Celltype2)) +
-  geom_tile(aes(fill = Count2), width = 0.4, col = "white") +
-  scale_fill_gradient(name = "Percent cells", low = "white", high = "grey40", guide = guide_colorbar(direction = "vertical"), labels = scales::percent, limits = c(0.0000001, max(data.sum2$Count2))) +
-  geom_point(aes(col = Expression, size = Percentage)) + #size = Percentage, 
-  scale_y_discrete(limits = rev) +
-  facet_grid(Cellclass ~ ., scales = "free_y", space = "free", switch = "y") +
-  scale_size_continuous(name = "Percent expressing", guide = guide_legend(direction = "vertical"), 
-                        labels = scales::percent, limits = c(0.0000001, max(data.sum2$Percentage))) +
-  scale_color_viridis(guide = guide_colorbar(direction = "vertical")) +
-  xlab(NULL) + ylab("Cell type") +
-  # scale_color_continuous(guide = guide_colorbar(direction = "vertical", reverse = TRUE), trans = "reverse") +
-  # scale_fill_distiller(trans = "reverse", guide = guide_colorbar(direction = "vertical", reverse = TRUE)) +
-  # scale_color_gradient2(midpoint = mean(data.sum$Count)) +#palette = "YlOrBr", trans = "reverse", guide = guide_colorbar(direction = "vertical", reverse = TRUE)) +
-  theme_bw() + theme(text = element_text(size = 18), strip.text.y.left = element_text(angle = 0), legend.position = "bottom", 
-                     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
-
-DimPlot(data.scRNA, reduction = "umap", label = TRUE, group.by = "subclass.l1")
-a = data.scRNA@meta.data
-data.plot = data.frame("UMAP_1" = round(data.scRNA@meta.data$umap1, 2),
-                       "UMAP_2" = round(data.scRNA@meta.data$umap2, 2),
-                       "CellType" = data.scRNA@meta.data$subclass.l1,
-                       "CellType2" = data.scRNA@meta.data$subclass.l2,
-                       "Disease" = data.scRNA@meta.data$diseasetype,
-                       "Expression" = data.scRNA@assays$RNA@data["P2RY14",])
-ggplotly(
-  ggplot(data.plot, aes(x = UMAP_1, UMAP_2, col = Expression, shape = Disease, fill = CellType,
-                        text = paste0("Class: ", CellType, "\nSubtype: ", CellType2))) +
-    geom_point(size = 0.1) + 
-    scale_color_viridis(limits = c(0.00001, max(data.plot$Expression)), na.value = "grey90") + theme_bw()
-)
-
-ggplot(data.plot, aes(x = UMAP_1, UMAP_2, col = CellType)) +
-  geom_point(size = 0.1) + theme_bw()
-
-
-DimPlot(data.scRNA, reduction = "umap", group.by = "subclass.l1")
-FeaturePlot(data.scRNA, reduction = "umap", features = "P2RY14", cols = c("grey95", viridis(3)),
-            cells = WhichCells(data.scRNA, expression = subclass.l1=="Immune"))
-
-as.formula("a")
-
-a = data.scRNA@meta.data
-b = data.snRNA@meta.data
-pat.annot2 = read.csv("Input/72ec8f42-750f-4e1b-bda9-7300d4de1365_20221208_OpenAccessClinicalData.csv")
+data.sel = subset(data.scRNA, subclass.l2 == "pDC")# & P2RY14 > 0)
+gene = "CLEC4C"
+scatter.plots = map(list("BCL11A", "CBFA2T3", "CLEC4C", "IRF7", "IRF8", "IL3RA", "TCF4", "CD83", "CD86"), function(gene){
+  # data.sel
+  FeatureScatter(data.sel, #cells = colnames(data.sel@assays$RNA@data)[data.sel@assays$RNA@data[gene,] > 0],
+                 feature1 = "P2RY14", feature2 = gene, plot.cor = FALSE, jitter = TRUE)# +
+  # geom_smooth(formula = y ~ x, method = "lm") +
+  # stat_cor()
+})
+wrap_plots(scatter.plots, guides = "collect", nrow = 2)
+ggsave("P2Y14/Output/P2RY14_pDC-Markers_CorrelationPlots_AllCells.pdf", width = 14, height = 6)
