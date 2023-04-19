@@ -25,7 +25,7 @@ pat.annot2 = read.csv("Input/72ec8f42-750f-4e1b-bda9-7300d4de1365_20221208_OpenA
 ## Data from https://atlas.kpmp.org/repository/?facetTab=files&files_size=60&files_sort=%5B%7B%22field%22%3A%22
 ## file_name%22%2C%22order%22%3A%22asc%22%7D%5D&filters=%7B%22op%22%3A%22and%22%2C%22content%22%3A%5B%7B%22op%22%3A%22in
 ## %22%2C%22content%22%3A%7B%22field%22%3A%22dois%22%2C%22value%22%3A%5B%2210.48698%2F92nk-e805%22%5D%7D%7D%5D%7D
-data.scRNA = LoadH5Seurat("Input/521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat")
+data.scRNA = LoadH5Seurat("Input/521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat", assays = list(RNA = c("data", "counts")))
 data.scRNA@meta.data$class = data.scRNA@meta.data$ClusterClass
 data.scRNA@meta.data$Patient = str_remove(data.scRNA@meta.data$orig.ident, "a$|b$|c$")
 
@@ -456,14 +456,3 @@ server = function(input, output, session) {
 ## App ----------------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
 
-data.sel = subset(data.scRNA, subclass.l2 == "pDC")# & P2RY14 > 0)
-gene = "CLEC4C"
-scatter.plots = map(list("BCL11A", "CBFA2T3", "CLEC4C", "IRF7", "IRF8", "IL3RA", "TCF4", "CD83", "CD86"), function(gene){
-  # data.sel
-  FeatureScatter(data.sel, #cells = colnames(data.sel@assays$RNA@data)[data.sel@assays$RNA@data[gene,] > 0],
-                 feature1 = "P2RY14", feature2 = gene, plot.cor = FALSE, jitter = TRUE)# +
-  # geom_smooth(formula = y ~ x, method = "lm") +
-  # stat_cor()
-})
-wrap_plots(scatter.plots, guides = "collect", nrow = 2)
-ggsave("P2Y14/Output/P2RY14_pDC-Markers_CorrelationPlots_AllCells.pdf", width = 14, height = 6)

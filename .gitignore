@@ -10,3 +10,5 @@ Output/
 *.csv
 *.png
 Trial_IronDeficiency_TW.R
+*.Rhistory
+*.rds

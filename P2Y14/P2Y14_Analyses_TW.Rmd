@@ -1,0 +1,149 @@
+---
+title: "P2Y14_Analyses"
+author: "Thijs (Mattheus) Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Built with R version `r getRversion()`
+
+```{r load packages & functions, include=FALSE}
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/P2Y14")
+source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
+```
+
+```{r setup, include=FALSE}
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# P2Y14 analyses {.tabset}
+
+## Single-cell transcriptomics
+### KPMP pDC gene correlations
+
+```{r load KPMP data, include=FALSE}
+data.scRNA = LoadH5Seurat("../Input/521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat",
+                          assays = list(RNA = c("data", "counts")))
+```
+
+```{r KPMP pDC gene correlations, fig.width=14, fig.height=6}
+corr.plots = function(selected = TRUE){
+  data.sel = subset(data.scRNA, subclass.l2 == "pDC" & if (selected) P2RY14 > 0 else TRUE)
+  scatter.plots = map(list("BCL11A", "CBFA2T3", "CLEC4C", "IRF7", "IRF8", "IL3RA", "TCF4", "CD83", "CD86"), function(gene){
+    if(selected){
+      FeatureScatter(data.sel, cells = colnames(data.sel@assays$RNA@data)[data.sel@assays$RNA@data[gene,] > 0],
+                     feature1 = "P2RY14", feature2 = gene, plot.cor = FALSE, jitter = TRUE) +
+        geom_smooth(formula = y ~ x, method = "lm") + stat_cor()
+    } else {
+      FeatureScatter(data.sel, feature1 = "P2RY14", feature2 = gene, plot.cor = FALSE, jitter = TRUE)
+    }
+  })
+  patchwork = wrap_plots(scatter.plots, guides = "collect", nrow = 2)
+  patchwork + plot_annotation(title = ifelse(selected, "Cells with gene expression > 0 selected", "All cells"))
+  ggsave(paste0("Output/KPMP-pDC-Markers_P2RY14_CorrelationPlots_", ifelse(selected, "Sel", "All"), "Cells.pdf"),
+         width = 14, height = 6)
+  
+  patchwork + plot_annotation(title = ifelse(selected, "Cells with gene expression > 0 selected", "All cells"))
+}
+corr.plots(selected = TRUE)
+corr.plots(selected = FALSE)
+
+```
+<hr style="border:1px solid gray"></hr>
+
+
+## Bulk transcriptomics
+### pDC subsets / exposed to flu virus
+Paper: https://www.nature.com/articles/s41590-017-0012-z \
+Data: https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE84204
+```{r pDC subsets, fig.width=10, fig.height=7}
+gse = getGEO("GSE84204", GSEMatrix = TRUE)[[1]]
+pat.annot = gse@phenoData@data
+TPM.data = fread("Input/GSE84204_norm_counts_TPM_GRCh38.p13_NCBI.tsv.gz")
+counts.data = fread("Input/GSE84204_raw_counts_GRCh38.p13_NCBI.tsv.gz")
+gene.annot = fread("Input/Human.GRCh38.p13.annot.tsv.gz")
+
+plot.gene = function(gene, dataset = "TPM", filter = FALSE){
+  data = get(paste0(dataset, ".data"))  %>% 
+    left_join(gene.annot %>% select(GeneID, Symbol), by = "GeneID") %>%
+    filter(Symbol == gene) %>%
+    select(-GeneID) %>% mutate(Symbol = make.unique(Symbol)) %>% column_to_rownames("Symbol") %>% 
+    t %>% as.data.frame %>% `colnames<-`("Gene") %>%
+    rownames_to_column("geo_accession") %>%
+    left_join(pat.annot %>% select(title, geo_accession, `cell type:ch1`, `stimulation:ch1`, `surface markers:ch1`),
+              by = "geo_accession") %>%
+    mutate(Celltype = str_remove(title, "-donor [:digit:]"),
+           Donor = str_extract(title, "donor [:digit:]"))
+  if (filter) data = data %>% filter(Celltype %in% c("Ex-vivo", "Medium"))
+  if(dataset == "counts") data = data %>% dplyr::mutate(Gene = log(Gene))
+    # dplyr::mutate(Gene = scale(log(Gene), center = TRUE, scale = FALSE))
+
+  ggplot(data, aes(x = Celltype, y = Gene, fill = Donor)) +
+    geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
+    # geom_hline(yintercept = 0) +
+    xlab(NULL) + ylab(paste(gene, ifelse(dataset == "counts", "(log counts)", "(TPM)"))) +
+    scale_y_continuous(expand = c(0,0)) +
+    theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+}
+plot.list = map(list("P2RY14", "CLEC4C", "IL3RA", "TCF4", "IRF7", "IRF8", "CBFA2T3", "BCL11A", "CD83", "CD86"), plot.gene, filter = TRUE)
+wrap_plots(plot.list, guides = "collect", nrow = 3)
+ggsave("Output/pDC-Subsets_P2RY14-markers_Basal.pdf", width = 10, height = 7)
+
+```
+
+### pDC subsets P2RY14 correlations
+Paper: https://www.nature.com/articles/s41590-017-0012-z \
+Data: https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE84204
+```{r pDC subsets correlations}
+dataset = "TPM"
+cor.data = get(paste0(dataset, ".data"))  %>% 
+  left_join(gene.annot %>% select(GeneID, Symbol), by = "GeneID") %>%
+  select(-GeneID) %>% mutate(Symbol = make.unique(Symbol)) %>%
+  column_to_rownames("Symbol") %>%
+  t %>% as.data.frame %>% select(-starts_with(c("MIR", "LOC", "OR", "LINC"))) %>%
+  cor(y = .$P2RY14)
+cor.list = setNames(cor.data[,1], rownames(cor.data)) %>%
+  sort(decreasing = FALSE)
+cor.list[1:100]
+
+```
+
+### pDC subset corr GSEA
+Paper: https://www.nature.com/articles/s41590-017-0012-z \
+Data: https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE84204
+```{r pDC subsets corr GSEA}
+dataset = "TPM"
+cor.data = get(paste0(dataset, ".data"))  %>% 
+  # left_join(gene.annot %>% select(GeneID, Symbol), by = "GeneID") %>%
+  # select(-GeneID) %>% mutate(Symbol = make.unique(Symbol)) %>%
+  column_to_rownames("GeneID") %>% #column_to_rownames("Symbol") %>% 
+  t %>% as.data.frame %>% #select(-starts_with(c("MIR", "LOC", "OR", "LINC"))) %>%
+  cor(y = .$`9934`)
+cor.data = setNames(cor.data[,1], rownames(cor.data)) %>%
+  sort(decreasing = TRUE)
+
+kegg2 = getKEGGPathwayNames(species="hsa")
+kegg1 = getGeneKEGGLinks(species="hsa") %>%
+  mutate(PathwayID = str_remove(PathwayID, "path:"),
+         Description = str_remove(kegg2$Description[match(PathwayID, kegg2$PathwayID)], " - Homo sapiens \\(human\\)")) %>%
+    filter(!str_detect(PathwayID, "hsa05|04930|04940|04950|04936|04932|04931|04933|04934|01501|01502|01503|01521|01524|01523|01522"))  %>%
+  select(Description, GeneID)
+
+set.seed(seed = 1)
+enr.KEGG = GSEA(geneList = cor.data, TERM2GENE = kegg1, eps = 0, pvalueCutoff = 1, by = "DOSE")
+
+data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(enr.KEGG@result, NES, n = 10)) %>%
+  mutate(Description = factor(Description, levels = Description),
+         Sign = factor(sign(NES), levels = c(-1,1), labels = c("Negative", "Positive")),
+         Significant = `p.adjust` < 0.05)
+
+ggplot(data.plot, aes(x = NES, y = Description, size = -log10(`p.adjust`), col = setSize, alpha = Significant)) +
+  geom_point() + scale_color_viridis() + scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) + guides(alpha = FALSE) +
+  facet_wrap(vars(Sign), scales = "free") +
+  labs(x = "NES (Normalized enrichment score)", y = NULL,
+       title = "Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\non ADPDK-group Spearman correlations") +
+  scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output//GSEA_Spearman_ADPKD-Group_Correlations.pdf", width = 12, height = 4.5)
+# ggsave("Output//GSEA_Selected_ADPKD-Group_Correlations.pdf", width = 10, height = 4)
+```
+

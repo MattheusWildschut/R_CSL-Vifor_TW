@@ -63,3 +63,17 @@ wb = createWorkbook()
 addDataFrame(tests.filtered, sheet = createSheet(wb, "Filtered"), row.names = FALSE)
 addDataFrame(tests.merged, sheet = createSheet(wb, "All"), row.names = FALSE)
 saveWorkbook(wb, "Data_to_visualize_on_dashboard_TW.xlsx")
+
+## Make Excel of selected SLCs for Alvaro ------------------------------------------------------------------------------
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Projects/RESOLUTE/Ionomics/DATA/summary/Merged_TW/")
+SLCs.sel = c("ANKH", "NIPAL2", "SLC39A11", "MFSD3", "SLC16A6", "SLC16A4", "SLC35F1", "SLC16A13", "SLC45A3", "SLCO5A1", "MFSD5", "SLC16A5", "SLC45A4")
+data.raw = read.xlsx("Data_to_visualize_on_dashboard_TW.xlsx", sheetName = "Filtered") 
+data.sel = data.raw %>%
+  filter(SLCShort %in% SLCs.sel) %>%
+  filter(padj < 0.05) %>%
+  mutate(SLCShort = factor(SLCShort, levels = SLCs.sel)) %>%
+  arrange(SLCShort) %>%
+  merge(data.frame("SLCShort" = SLCs.sel), by = "SLCShort", all = TRUE)
+wb = createWorkbook()
+addDataFrame(data.sel, sheet = createSheet(wb, "Selected_SLCs"), row.names = FALSE)
+saveWorkbook(wb, "Selected_SLCs_ForAlvaro_TW.xlsx")
