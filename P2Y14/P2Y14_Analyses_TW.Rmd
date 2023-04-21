@@ -8,8 +8,9 @@ output: html_document
 Built with R version `r getRversion()`
 
 ```{r load packages & functions, include=FALSE}
-setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/P2Y14")
 source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/P2Y14")
+
 ```
 
 ```{r setup, include=FALSE}
@@ -52,11 +53,14 @@ corr.plots(selected = FALSE)
 <hr style="border:1px solid gray"></hr>
 
 
-## Bulk transcriptomics
-### pDC subsets / exposed to flu virus
+## pDC subsets / flu virus
+Alculumbre *et al.*, Diversification of human plasmacytoid predendritic cells in response to a single stimulus. **Nature Immunology** 2018
 Paper: https://www.nature.com/articles/s41590-017-0012-z \
-Data: https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE84204
-```{r pDC subsets, fig.width=10, fig.height=7}
+Data: https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE84204 \
+Idea: pDCs are isolated ex-vivo and either exposed to 24h medium or flu virus. After flu exposure, pDCs are sorted into three populations: P1 (PD-L1+/CD80–), p2 (PD-L1+/CD80+), and P3 (PD-L1–/CD80+)
+
+### P2Y14 & pDC marker expression across pDC populations
+```{r pDC subsets, fig.width=10, fig.height=14}
 gse = getGEO("GSE84204", GSEMatrix = TRUE)[[1]]
 pat.annot = gse@phenoData@data
 TPM.data = fread("Input/GSE84204_norm_counts_TPM_GRCh38.p13_NCBI.tsv.gz")
@@ -78,25 +82,28 @@ plot.gene = function(gene, dataset = "TPM", filter = FALSE){
   if(dataset == "counts") data = data %>% dplyr::mutate(Gene = log(Gene))
     # dplyr::mutate(Gene = scale(log(Gene), center = TRUE, scale = FALSE))
 
-  ggplot(data, aes(x = Celltype, y = Gene, fill = Donor)) +
+  plot = ggplot(data, aes(x = Celltype, y = Gene, fill = Donor)) +
     geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
     # geom_hline(yintercept = 0) +
     xlab(NULL) + ylab(paste(gene, ifelse(dataset == "counts", "(log counts)", "(TPM)"))) +
     scale_y_continuous(expand = c(0,0)) +
     theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+  ggsave(paste0("Output/pDC-Subsets_P2RY14-markers_", ifelse(filter, "Basal", "All"), ".pdf"), width = 10, height = 7)
+  plot
 }
-plot.list = map(list("P2RY14", "CLEC4C", "IL3RA", "TCF4", "IRF7", "IRF8", "CBFA2T3", "BCL11A", "CD83", "CD86"), plot.gene, filter = TRUE)
-wrap_plots(plot.list, guides = "collect", nrow = 3)
-ggsave("Output/pDC-Subsets_P2RY14-markers_Basal.pdf", width = 10, height = 7)
+
+gene.list = list("P2RY14", "CLEC4C", "IL3RA", "TCF4", "IRF7", "IRF8", "CBFA2T3", "BCL11A", "CD83", "CD86")
+plot.list.all = map(gene.list, plot.gene, filter = FALSE)
+plot.list.filter = map(gene.list, plot.gene, filter = TRUE)
+wrap_plots(plot.list.all, guides = "collect", nrow = 3) / wrap_plots(plot.list.filter, guides = "collect", nrow = 3)
 
 ```
+<hr style="border:1px solid gray"></hr>
 
-### pDC subsets P2RY14 correlations
-Paper: https://www.nature.com/articles/s41590-017-0012-z \
-Data: https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE84204
+### P2RY14 correlations across all pDCs
 ```{r pDC subsets correlations}
 dataset = "TPM"
-cor.data = get(paste0(dataset, ".data"))  %>% 
+cor.data = get(paste0(dataset, ".data"))  %>%
   left_join(gene.annot %>% select(GeneID, Symbol), by = "GeneID") %>%
   select(-GeneID) %>% mutate(Symbol = make.unique(Symbol)) %>%
   column_to_rownames("Symbol") %>%
@@ -108,17 +115,15 @@ cor.list[1:100]
 
 ```
 
-### pDC subset corr GSEA
-Paper: https://www.nature.com/articles/s41590-017-0012-z \
-Data: https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE84204
-```{r pDC subsets corr GSEA}
+### GSEA of P2RY14 correlations across all pDCs
+```{r pDC subsets corr GSEA, fig.height=4.5, fig.width=10}
 dataset = "TPM"
-cor.data = get(paste0(dataset, ".data"))  %>% 
+cor.data = get(paste0(dataset, ".data"))  %>%
   # left_join(gene.annot %>% select(GeneID, Symbol), by = "GeneID") %>%
   # select(-GeneID) %>% mutate(Symbol = make.unique(Symbol)) %>%
-  column_to_rownames("GeneID") %>% #column_to_rownames("Symbol") %>% 
+  column_to_rownames("GeneID") %>% #column_to_rownames("Symbol") %>%
   t %>% as.data.frame %>% #select(-starts_with(c("MIR", "LOC", "OR", "LINC"))) %>%
-  cor(y = .$`9934`)
+  cor(y = .$`9934`, method = "spearman")
 cor.data = setNames(cor.data[,1], rownames(cor.data)) %>%
   sort(decreasing = TRUE)
 
@@ -130,7 +135,7 @@ kegg1 = getGeneKEGGLinks(species="hsa") %>%
   select(Description, GeneID)
 
 set.seed(seed = 1)
-enr.KEGG = GSEA(geneList = cor.data, TERM2GENE = kegg1, eps = 0, pvalueCutoff = 1, by = "DOSE")
+enr.KEGG = GSEA(geneList = cor.data, TERM2GENE = kegg1, eps = 0, pvalueCutoff = 1, nPermSimple = 10000)
 
 data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(enr.KEGG@result, NES, n = 10)) %>%
   mutate(Description = factor(Description, levels = Description),
@@ -138,12 +143,104 @@ data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(
          Significant = `p.adjust` < 0.05)
 
 ggplot(data.plot, aes(x = NES, y = Description, size = -log10(`p.adjust`), col = setSize, alpha = Significant)) +
-  geom_point() + scale_color_viridis() + scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) + guides(alpha = FALSE) +
+  geom_point() + scale_color_viridis() + scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) + guides(alpha = "none") +
   facet_wrap(vars(Sign), scales = "free") +
   labs(x = "NES (Normalized enrichment score)", y = NULL,
-       title = "Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\non ADPDK-group Spearman correlations") +
+       title = "Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\non P2RY14 correlations") +
   scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
-ggsave("Output//GSEA_Spearman_ADPKD-Group_Correlations.pdf", width = 12, height = 4.5)
-# ggsave("Output//GSEA_Selected_ADPKD-Group_Correlations.pdf", width = 10, height = 4)
+ggsave("Output/pDC-Alculumbre_GSEA_Spearman_P2RY14_Correlations.pdf", height = 4.5, width = 10)
 ```
 
+## Kidney perfusion model
+Ferdinand *et al.*, Cytokine abosroption during human kidney perfusiohn reduces delayed graft function-assoicated inflammatory gene signature. **American Journal of Transplantation 2021**\
+Paper: https://www.sciencedirect.com/science/article/pii/S1600613522085938?via%3Dihub \
+Data: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE121447
+
+### Boxplots different timepoints & treatments
+```{r Kidney perfusion Ferdinand 2021, fig.height=6, fig.width=11}
+gse = getGEO("GSE121447", GSEMatrix = TRUE)[[1]]
+pat.annot = gse@phenoData@data
+data = fread("Input/GSE121447_Normcounts.csv.gz", header = TRUE) %>%
+  column_to_rownames("V1") %>%
+  t %>% as.data.frame %>%
+  # select(P2RY14, PADI4) %>%
+  mutate(title = pat.annot$title) %>%
+  left_join(pat.annot %>% select(title, contains(":ch1")), by = "title") %>%
+  column_to_rownames("title") %>%
+  `colnames<-`(capitalize(str_remove(colnames(.), ":ch1"))) %>%
+  mutate(Person = factor(as.integer(Person)))
+
+ferdi.function = function(dataset, x.var, y.var, facet.var){
+  data = if(dataset == "data1") slice(data, 1:20) else slice(data, 21:50)
+  ggplot(data, aes(x = .data[[x.var]], y = .data[[y.var]], fill = .data[[x.var]], col = .data[[x.var]])) +
+    geom_hline(yintercept = 0) +
+    geom_boxplot(alpha = 0.2, outlier.alpha = 0) + geom_jitter(width = 0.1) +
+    facet_grid(.~.data[[facet.var]]) +
+    stat_compare_means(comparisons = if(dataset == "data2" & x.var == "Timepoint") list(c(1,2), c(1,3), c(2,3)) else list(c(1,2)),
+                       method = "t.test", label = "p.signif", hide.ns = TRUE,
+                       vjust = 0.5, step.increase = 0.07, tip.length = 0.02) +
+    theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + xlab(NULL)
+}
+(ferdi.function("data2", "Timepoint", "P2RY14", "Treatment") + ferdi.function("data2", "Treatment", "P2RY14", "Timepoint")) /
+  (ferdi.function("data2", "Timepoint", "PADI4", "Treatment") + ferdi.function("data2", "Treatment", "PADI4", "Timepoint"))
+
+```
+<hr style="border:1px solid gray"></hr>
+
+### Lineplots individual patients different timepoints & treatments
+```{r Kidney perfusion 2, fig.height=6, fig.width=12}
+function.2 = function(dataset, x.var, y.var, facet.var){
+  data = if(dataset == "data1") slice(data, 1:20) else slice(data, 21:50)
+  ggplot(data, aes(x = .data[[x.var]], y = .data[[y.var]], group = Person, col = Person)) +
+    geom_line() + geom_point() +
+    facet_grid(.~ .data[[facet.var]]) +
+    theme_bw()
+}
+(function.2("data1", "Timepoint", "P2RY14", "Treatment") / function.2("data2", "Timepoint", "P2RY14", "Treatment")) |
+  (function.2("data1", "Timepoint", "PADI4", "Treatment") / function.2("data2", "Timepoint", "PADI4", "Treatment"))
+  
+```
+<hr style="border:1px solid gray"></hr>
+
+### Correlation to urine output & Renal blood flow
+```{r Kidney perfusion 3, fig.height=4.25, fig.width=8.75}
+
+data.heat1 = data %>% 
+  filter(Timepoint == "0hr" & Treatment == "MNP") %>%
+  select(FLNC, C2CD4B, HSPA1A, HSPA1B, TRAF1, SERPINH1, HSPH1, IFIT2, ATP12A, REPS2, COL22A1, P2RY14, PADI4) %>%
+  dplyr::mutate(across(everything(), scale)) %>%
+  `rownames<-`(str_extract(rownames(.), "subject[:digit:]{1,2}")) %>% t
+
+pat.order1 = paste0("subject", c(1, 7, 4, 3, 8, 6, 2, 10, 5, 9))
+row.split1 = factor(rep(c("Paper", "P2Y14\nPAD4"), c(11, 2)), levels = c("Paper", "P2Y14\nPAD4"))
+ha1 = HeatmapAnnotation(df = data.frame("Urine" = c(1,1,1,1,2,2,3,3,4,4)), 
+                       col = list("Urine" = setNames(brewer.pal(4, "Greens"), 1:4)),
+                       border = TRUE, gp = gpar(col = "grey30"), show_legend = FALSE)
+
+heat.1 = Heatmap(data.heat1[,pat.order1], name = "Row Z Score", top_annotation = ha1,
+        col = colorRamp2(c(-1.25,0,2), rev(brewer.pal(9, "RdYlBu")[c(1,5,9)])),
+        cluster_rows = FALSE, cluster_columns = FALSE, row_split = row.split1,
+        border = TRUE, rect_gp = gpar(col = "grey30"), show_column_names = FALSE)
+
+data.heat2 = data %>% 
+  filter(Timepoint == "0hr" & Treatment == "MNP") %>%
+  select(HES2, TRAF3IP3, HSPA1L, CYP2B6, TRIM10, G0S2, NUDC, AHSA2, P2RY14, PADI4) %>%
+  dplyr::mutate(across(everything(), scale)) %>%
+  `rownames<-`(str_extract(rownames(.), "subject[:digit:]{1,2}")) %>% t
+
+pat.order2 = paste0("subject", c(3, 1, 6, 8, 10, 4, 2, 9, 7, 5))
+row.split2 = factor(rep(c("Paper", "P2Y14\nPAD4"), c(8, 2)), levels = c("Paper", "P2Y14\nPAD4"))
+ha2 = HeatmapAnnotation(df = data.frame("RBF" = 1:10), 
+                       col = list("RBF" = setNames(c("white", brewer.pal(9, "Greens")), 1:10)),
+                       border = TRUE, gp = gpar(col = "grey30"), show_legend = FALSE)
+
+heat.2 = Heatmap(data.heat2[,pat.order2], name = "Row Z Score", top_annotation = ha2,
+        col = colorRamp2(c(-1.75,0,2), rev(brewer.pal(9, "RdYlBu")[c(1,5,9)])),
+        border = TRUE, rect_gp = gpar(col = "grey30"),
+        cluster_rows = FALSE, cluster_columns = FALSE, row_split = row.split2, show_column_names = FALSE)
+
+as_ggplot(grid.grabExpr(draw(heat.1))) + 
+  (as_ggplot(grid.grabExpr(draw(heat.2))) / plot_spacer() + plot_layout(heights = c(4,1)))
+
+```
+<hr style="border:1px solid gray"></hr>

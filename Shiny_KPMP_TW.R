@@ -5,10 +5,6 @@ source("SourceFile_TW.R")
 # remotes::install_github("mojaveazure/seurat-disk")
 # install.packages("Matrix")
 
-library(Seurat)
-library(SeuratDisk)
-library(scCustomize)
-
 # data.scRNA = LoadH5Seurat("Input\\GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Seurat_03282022.h5Seurat", assays = list(RNA = "data")) #%>%
   # subset(subset = nFeature_RNA > 500 & nFeature_RNA < 5000 & percent.mt < 20)
 # data.snRNA = LoadH5Seurat("Input\\GSE183277_Kidney_Healthy-Injury_Cell_Atlas_snCv3_Seurat_03282022.h5Seurat", assays = list(RNA = "data"))# %>%
