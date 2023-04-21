@@ -54,7 +54,7 @@ corr.plots(selected = FALSE)
 
 
 ## pDC subsets / flu virus
-Alculumbre *et al.*, Diversification of human plasmacytoid predendritic cells in response to a single stimulus. **Nature Immunology** 2018
+Alculumbre *et al.*, Diversification of human plasmacytoid predendritic cells in response to a single stimulus. **Nature Immunology** 2018 \
 Paper: https://www.nature.com/articles/s41590-017-0012-z \
 Data: https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE84204 \
 Idea: pDCs are isolated ex-vivo and either exposed to 24h medium or flu virus. After flu exposure, pDCs are sorted into three populations: P1 (PD-L1+/CD80–), p2 (PD-L1+/CD80+), and P3 (PD-L1–/CD80+)
@@ -88,7 +88,7 @@ plot.gene = function(gene, dataset = "TPM", filter = FALSE){
     xlab(NULL) + ylab(paste(gene, ifelse(dataset == "counts", "(log counts)", "(TPM)"))) +
     scale_y_continuous(expand = c(0,0)) +
     theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
-  ggsave(paste0("Output/pDC-Subsets_P2RY14-markers_", ifelse(filter, "Basal", "All"), ".pdf"), width = 10, height = 7)
+  ggsave(paste0("Output/pDC-Alculumbre_P2RY14-markers_", ifelse(filter, "Basal", "All"), ".pdf"), width = 10, height = 7)
   plot
 }
 
@@ -110,8 +110,8 @@ cor.data = get(paste0(dataset, ".data"))  %>%
   t %>% as.data.frame %>% select(-starts_with(c("MIR", "LOC", "OR", "LINC"))) %>%
   cor(y = .$P2RY14)
 cor.list = setNames(cor.data[,1], rownames(cor.data)) %>%
-  sort(decreasing = FALSE)
-cor.list[1:100]
+  sort(decreasing = TRUE)
+cor.list[1:50]
 
 ```
 
@@ -152,7 +152,7 @@ ggsave("Output/pDC-Alculumbre_GSEA_Spearman_P2RY14_Correlations.pdf", height = 4
 ```
 
 ## Kidney perfusion model
-Ferdinand *et al.*, Cytokine abosroption during human kidney perfusiohn reduces delayed graft function-assoicated inflammatory gene signature. **American Journal of Transplantation 2021**\
+Ferdinand *et al.*, Cytokine abosroption during human kidney perfusiohn reduces delayed graft function-assoicated inflammatory gene signature. **American Journal of Transplantation 2021** \
 Paper: https://www.sciencedirect.com/science/article/pii/S1600613522085938?via%3Dihub \
 Data: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE121447
 
@@ -196,9 +196,11 @@ function.2 = function(dataset, x.var, y.var, facet.var){
     facet_grid(.~ .data[[facet.var]]) +
     theme_bw()
 }
-(function.2("data1", "Timepoint", "P2RY14", "Treatment") / function.2("data2", "Timepoint", "P2RY14", "Treatment")) |
+plots = (function.2("data1", "Timepoint", "P2RY14", "Treatment") / function.2("data2", "Timepoint", "P2RY14", "Treatment")) |
   (function.2("data1", "Timepoint", "PADI4", "Treatment") / function.2("data2", "Timepoint", "PADI4", "Treatment"))
-  
+ggsave("Output/Perfusion-Ferdinand_P2RY14-PADI4_Lineplots.pdf", plots, height = 6, width = 12)
+plots
+
 ```
 <hr style="border:1px solid gray"></hr>
 
@@ -206,7 +208,7 @@ function.2 = function(dataset, x.var, y.var, facet.var){
 ```{r Kidney perfusion 3, fig.height=4.25, fig.width=8.75}
 
 data.heat1 = data %>% 
-  filter(Timepoint == "0hr" & Treatment == "MNP") %>%
+  filter(Timepoint == "2hr" & Treatment == "MNP") %>%
   select(FLNC, C2CD4B, HSPA1A, HSPA1B, TRAF1, SERPINH1, HSPH1, IFIT2, ATP12A, REPS2, COL22A1, P2RY14, PADI4) %>%
   dplyr::mutate(across(everything(), scale)) %>%
   `rownames<-`(str_extract(rownames(.), "subject[:digit:]{1,2}")) %>% t
@@ -223,7 +225,7 @@ heat.1 = Heatmap(data.heat1[,pat.order1], name = "Row Z Score", top_annotation =
         border = TRUE, rect_gp = gpar(col = "grey30"), show_column_names = FALSE)
 
 data.heat2 = data %>% 
-  filter(Timepoint == "0hr" & Treatment == "MNP") %>%
+  filter(Timepoint == "2hr" & Treatment == "MNP") %>%
   select(HES2, TRAF3IP3, HSPA1L, CYP2B6, TRIM10, G0S2, NUDC, AHSA2, P2RY14, PADI4) %>%
   dplyr::mutate(across(everything(), scale)) %>%
   `rownames<-`(str_extract(rownames(.), "subject[:digit:]{1,2}")) %>% t
@@ -239,8 +241,35 @@ heat.2 = Heatmap(data.heat2[,pat.order2], name = "Row Z Score", top_annotation =
         border = TRUE, rect_gp = gpar(col = "grey30"),
         cluster_rows = FALSE, cluster_columns = FALSE, row_split = row.split2, show_column_names = FALSE)
 
-as_ggplot(grid.grabExpr(draw(heat.1))) + 
+heats = as_ggplot(grid.grabExpr(draw(heat.1))) + 
   (as_ggplot(grid.grabExpr(draw(heat.2))) / plot_spacer() + plot_layout(heights = c(4,1)))
+ggsave("Output/Perfusion-Ferdinand_Urine-RBF_Correlations.pdf", heats, height = 4.25, width = 8.75)
+heats
 
 ```
 <hr style="border:1px solid gray"></hr>
+
+### GSEA of P2RY14 correlations across conditions
+```{r Ferdinand corr GSEA, fig.height=4.5, fig.width=10}
+cor.data = data %>%
+  select(where(is.numeric)) %>%
+  cor(y = data$P2RY14, method = "spearman")
+cor.data2 = setNames(cor.data[,1], gene.annot$GeneID[match(rownames(cor.data), gene.annot$Symbol)]) %>%
+  sort(decreasing = TRUE)
+
+set.seed(seed = 1)
+enr.KEGG = GSEA(geneList = cor.data2, TERM2GENE = kegg1, eps = 0, pvalueCutoff = 1, nPermSimple = 10000)
+
+data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(enr.KEGG@result, NES, n = 10)) %>%
+  mutate(Description = factor(Description, levels = Description),
+         Sign = factor(sign(NES), levels = c(-1,1), labels = c("Negative", "Positive")),
+         Significant = `p.adjust` < 0.05)
+
+ggplot(data.plot, aes(x = NES, y = Description, size = -log10(`p.adjust`), col = setSize, alpha = Significant)) +
+  geom_point() + scale_color_viridis() + scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) + guides(alpha = "none") +
+  facet_wrap(vars(Sign), scales = "free") +
+  labs(x = "NES (Normalized enrichment score)", y = NULL,
+       title = "Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\non P2RY14 correlations") +
+  scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output/Perfusion-Ferdinand_GSEA_Spearman_P2RY14_Correlations.pdf", height = 4.5, width = 10)
+```
