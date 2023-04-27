@@ -1,0 +1,109 @@
+---
+title: "RESOLUTE_Mitoferrin-2_Analyses"
+author: "Thijs (Mattheus) Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Built with R version `r getRversion()`
+
+```{r load packages & functions, include=FALSE}
+source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/RESOLUTE")
+
+```
+
+```{r setup, include=FALSE}
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# RESOLUTE_Mitoferrin-2_Analyses {.tabset}
+
+## RESOLUTE transcriptomics
+Data exported from RESOLUTE transcriptomics dashboard \
+Comparison WT vs OE (HEK): https://re-solute.eu/internal/database/dashboards/transcriptomics/analysis/AN0298-B \
+Comparison KO vs OE (HCT116): https://re-solute.eu/internal/database/dashboards/transcriptomics/analysis/AN010S-7 \
+
+### Overlap significant changes
+```{r Overlap significant changes, fig.width=10, fig.height=4}
+data.WT = read.csv("Input/RESOLUTE_SCL25A28_WT-OE.csv")# %>% mutate(Comparison = "WT-OE")
+data.KO = read.csv("Input/RESOLUTE_SCL25A28_KO-OE.csv")# %>% mutate(Comparison = "KO-OE")
+data = merge(data.WT, data.KO, by = c("Gene.Symbol", "HGNC.ID", "Gene.Name", "Ensembl.Gene.ID"), suffixes = c("_WT", "_KO")) %>%
+  mutate(SignedP_WT = -log10(adjusted.p.value_WT+1e-50)*sign(log2.fold.change_WT),
+         SignedP_KO = -log10(adjusted.p.value_KO+1e-50)*sign(log2.fold.change_KO),
+         Direction = factor((SignedP_WT > -log10(0.05) & SignedP_KO > -log10(0.05)) | SignedP_WT < log10(0.05) & SignedP_KO < log10(0.05),
+                              levels = c("TRUE", "FALSE"), labels = c("Same", "Opposite")),
+         Significant = adjusted.p.value_WT < 0.05 & adjusted.p.value_KO < 0.05)
+# plot.log2FC = ggplot(data, aes(x = log2.fold.change_WT, y = log2.fold.change_KO)) +
+#   geom_point() +
+#   geom_label_repel(data = filter(data, log2.fold.change_WT > 0.1 & log2.fold.change_KO > 0.1), aes(label = Gene.Symbol), max.overlaps = Inf)
+# plot.signedP = 
+plot = ggplot(data, aes(x = SignedP_WT, y = SignedP_KO)) +
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) +
+  geom_point(aes(col = Significant)) +
+  scale_color_manual(values = c("TRUE" = "black", "FALSE" = "grey70"), breaks = c("TRUE", "FALSE")) +
+  scale_fill_manual(values = c("Same" = "green3", "Opposite" = "red2")) +
+  geom_label_repel(data = filter(data, Significant), aes(label = Gene.Symbol, fill = Direction),
+                   max.overlaps = Inf, size = 3, label.padding = 0.1, alpha = 0.8) +
+  theme_bw()
+plot2 = plot + coord_cartesian(xlim = c(-15,15), ylim = c(-15,15))
+plot + plot2
+ggsave("Output/SLC25A28-Transcriptomics_WT-OE_KO-OE.pdf", width = 10, height = 4)
+
+```
+<hr style="border:1px solid gray"></hr>
+
+### Transcriptomics GSEA & overlap
+```{r Transcriptomics GSEA, fig.width=9, fig.height=4.5}
+kegg2 = getKEGGPathwayNames(species="hsa")
+kegg1 = getGeneKEGGLinks(species="hsa") %>%
+  mutate(Gene = AnnotationDbi::mapIds(org.Hs.eg.db::org.Hs.eg.db, GeneID, column = "SYMBOL", keytype = "ENTREZID"),
+         PathwayID = str_remove(PathwayID, "path:"),
+         Description = str_remove(kegg2$Description[match(PathwayID, kegg2$PathwayID)], " - Homo sapiens \\(human\\)")) %>%
+    filter(!str_detect(PathwayID, "hsa05|04930|04940|04950|04936|04932|04931|04933|04934|01501|01502|01503|01521|01524|01523|01522"))  %>%
+  select(Description, Gene)
+
+list.kegg = sort(setNames(data$SignedP_KO, data$Gene.Symbol), decreasing = TRUE)
+set.seed(seed = 1)
+enr.KEGG = GSEA(geneList = list.kegg, TERM2GENE = kegg1, eps = 0, pvalueCutoff = 1)
+
+# enr.GO.up = enrichGO(data$Gene.Symbol[data$SignedP_WT > -log10(0.05)], OrgDb = "org.Hs.eg.db", ont = "BP", keyType = "SYMBOL",
+#                   universe = data$Gene.Symbol)@result
+# enr.GO.down = enrichGO(data$Gene.Symbol[data$SignedP_WT < log10(0.05)], OrgDb = "org.Hs.eg.db", ont = "BP", keyType = "SYMBOL",
+#                   universe = data$Gene.Symbol)@result
+
+data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(enr.KEGG@result, NES, n = 10)) %>%
+  mutate(Description = factor(Description, levels = Description),
+         Sign = factor(sign(NES), levels = c(-1,1), labels = c("Negative", "Positive")),
+         Significant = `p.adjust` < 0.05)
+
+ggplot(data.plot, aes(x = NES, y = Description, size = -log10(`p.adjust`), col = setSize, alpha = Significant)) +
+  geom_point() + scale_color_viridis() + scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) + guides(alpha = FALSE) +
+  facet_wrap(vars(Sign), scales = "free") +
+  labs(x = "NES (Normalized enrichment score)", y = NULL,
+       title = "Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\non ADPDK-group Spearman correlations") +
+  scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+# ggsave("Output//GSEA_Spearman_ADPKD-Group_Correlations.pdf", width = 12, height = 4.5)
+
+```
+<hr style="border:1px solid gray"></hr>
+
+### Transcriptomics Friedreich's ataxia
+```{r GSE102008, fig.width=9, fig.height=4.5}
+gse = getGEO("GSE102008", GSEMatrix = TRUE)[[1]]
+gene.annot = gse@featureData@data
+pat.annot = gse@phenoData@data
+
+data = gse@assayData$exprs %>% as.data.frame %>%
+  mutate(Gene = gene.annot$ILMN_Gene[match(rownames(.), gene.annot$ID)]) %>%
+  group_by(Gene) %>% dplyr::summarise(across(everything(), max))
+data2 = data %>% column_to_rownames("Gene") %>%
+  t %>% as.data.frame %>%
+  mutate(Disease = pat.annot$`status:ch1`[match(rownames(.), pat.annot$geo_accession)])
+
+data2$Disease
+ggplot(data2, aes(x = Disease, y = SLC25A28)) +
+  geom_boxplot() +
+  stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3)), method = "t.test")
+
+```

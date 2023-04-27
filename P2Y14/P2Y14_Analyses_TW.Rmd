@@ -159,7 +159,8 @@ Data: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE121447
 ### Boxplots different timepoints & treatments
 ```{r Kidney perfusion Ferdinand 2021, fig.height=6, fig.width=11}
 gse = getGEO("GSE121447", GSEMatrix = TRUE)[[1]]
-pat.annot = gse@phenoData@data
+pat.annot = gse@phenoData@data %>%
+  mutate(`treatment:ch1` = str_replace(`treatment:ch1`, "MNP", "NMP"))
 data = fread("Input/GSE121447_Normcounts.csv.gz", header = TRUE) %>%
   column_to_rownames("V1") %>%
   t %>% as.data.frame %>%
@@ -250,26 +251,33 @@ heats
 <hr style="border:1px solid gray"></hr>
 
 ### GSEA of P2RY14 correlations across conditions
-```{r Ferdinand corr GSEA, fig.height=4.5, fig.width=10}
-cor.data = data %>%
-  select(where(is.numeric)) %>%
-  cor(y = data$P2RY14, method = "spearman")
-cor.data2 = setNames(cor.data[,1], gene.annot$GeneID[match(rownames(cor.data), gene.annot$Symbol)]) %>%
-  sort(decreasing = TRUE)
+```{r Ferdinand corr GSEA, fig.height=9, fig.width=10}
+gsea.ferd = function(conditions){
+  if(conditions == "Basal") data = filter(data, Timepoint == "0hr")
+  cor.data = data %>%
+    select(where(is.numeric)) %>%
+    cor(y = .$P2RY14, method = "spearman")
+  cor.data2 = setNames(cor.data[,1], gene.annot$GeneID[match(rownames(cor.data), gene.annot$Symbol)]) %>%
+    sort(decreasing = TRUE)
+  
+  set.seed(seed = 1)
+  enr.KEGG = GSEA(geneList = cor.data2, TERM2GENE = kegg1, eps = 0, pvalueCutoff = 1, nPermSimple = 10000)
+  
+  data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(enr.KEGG@result, NES, n = 10)) %>%
+    mutate(Description = factor(Description, levels = Description),
+           Sign = factor(sign(NES), levels = c(-1,1), labels = c("Negative", "Positive")),
+           Significant = `p.adjust` < 0.05)
+  
+  plot = ggplot(data.plot, aes(x = NES, y = Description, size = -log10(`p.adjust`), col = setSize, alpha = Significant)) +
+    geom_point() + scale_color_viridis() + scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) + guides(alpha = "none") +
+    facet_wrap(vars(Sign), scales = "free") +
+    labs(x = "NES (Normalized enrichment score)", y = NULL,
+         title = paste("Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\non P2RY14 correlations",
+                        conditions, "conditions")) +
+    scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
+  ggsave(paste0("Output/Perfusion-Ferdinand_P2RY14_Correlations_GSEA_", conditions, ".pdf"), plot, height = 4.5, width = 10)
+  plot
+}
+gsea.ferd("All")/gsea.ferd("Basal")
 
-set.seed(seed = 1)
-enr.KEGG = GSEA(geneList = cor.data2, TERM2GENE = kegg1, eps = 0, pvalueCutoff = 1, nPermSimple = 10000)
-
-data.plot = rbind.data.frame(slice_max(enr.KEGG@result, NES, n = 10), slice_min(enr.KEGG@result, NES, n = 10)) %>%
-  mutate(Description = factor(Description, levels = Description),
-         Sign = factor(sign(NES), levels = c(-1,1), labels = c("Negative", "Positive")),
-         Significant = `p.adjust` < 0.05)
-
-ggplot(data.plot, aes(x = NES, y = Description, size = -log10(`p.adjust`), col = setSize, alpha = Significant)) +
-  geom_point() + scale_color_viridis() + scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.2)) + guides(alpha = "none") +
-  facet_wrap(vars(Sign), scales = "free") +
-  labs(x = "NES (Normalized enrichment score)", y = NULL,
-       title = "Top 10 enriched KEGG terms\nfrom gene set enrichment analysis (GSEA)\non P2RY14 correlations") +
-  scale_y_discrete(limits = rev) + theme_bw() + theme(plot.title = element_text(hjust = 0.5))
-ggsave("Output/Perfusion-Ferdinand_GSEA_Spearman_P2RY14_Correlations.pdf", height = 4.5, width = 10)
 ```

@@ -1,10 +1,9 @@
-setwd("C:\\Users\\mwildschut\\OneDrive - Vifor Pharma AG\\Documents\\R\\Projects\\R_CSL-Vifor_TW")
-source("SourceFile_TW.R")
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/CSL_Global-RPMC")
+source("../SourceFile_TW.R")
 
 ## Downloaded from https://www.ebi.ac.uk/gwas/docs/file-downloads
 data.raw = fread("Input/gwas_catalog_v1.0.2-associations_e109_r2023-03-11.tsv")
-CSL = read.xlsx("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Projects/CSL_Global-RPMC/CSL_Global-RPMC_Overview.xlsx",
-                sheetIndex = 1)
+CSL = read.xlsx("Input/CSL_Global-RPMC_Overview.xlsx", sheetIndex = 1)
 
 project = CSL$Description[2]
 
@@ -37,7 +36,7 @@ list.projects = map(as.list(CSL$Description), function(project){
           column_names_gp = gpar(fontsize = 9)), padding = unit(c(6,0,0,0), "in"))
 })
 
-pdf("CSL_Global-RPMC/Output/Projects_Combined.pdf", width = 25, height = 12)
+pdf("Output/Projects_Combined2.pdf", width = 25, height = 12)
 map(list.projects, function(x){
   x
 })
