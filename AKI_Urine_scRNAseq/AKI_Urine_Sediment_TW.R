@@ -1,9 +1,5 @@
-setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/AKI_Immune_scRNAseq")
-source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
-
-library(Seurat)
-library(SeuratDisk)
-library(scCustomize)
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/AKI_Urine_scRNAseq")
+source("../SourceFile_TW.R")
 
 URINE = readRDS("Input/SO_all_urine_cells.rds")
 # RENAL = readRDS("Input/SO_kidney_urine_cells.rds")
@@ -11,11 +7,11 @@ URINE = readRDS("Input/SO_all_urine_cells.rds")
 DimPlot(URINE, reduction = "umap", group.by = "renalcellgroup", label = TRUE, repel = TRUE, label.size = 3) +
   DimPlot(URINE, reduction = "umap", group.by = "renalcelltype", label = TRUE, repel = FALSE, label.size = 3) +
   FeaturePlot(URINE, features = "P2RY14")
-ggsave("UMAPs_P2RY14.pdf", width = 22, height = 6, units = "in")
+ggsave("Output/UMAPs_P2RY14.pdf", width = 22, height = 6, units = "in")
 VlnPlot(URINE, features = "P2RY14", group.by = "renalcelltype")
 DotPlot(URINE, features = "P2RY14", group.by = "renalcellgroup", dot.min = 0.0001) +
   DotPlot(URINE, features = "P2RY14", group.by = "renalcelltype", dot.min = 0.0001)
-ggsave("DotPlots_P2RY14.pdf", width = 8, height = 7, units = "in")
+ggsave("Output/DotPlots_P2RY14.pdf", width = 8, height = 7, units = "in")
 
 (DotPlot(URINE, features = "P2RY14", group.by = "renalcellgroup", dot.min = 0.0001) +
   DotPlot(URINE, features = "P2RY14", group.by = "renalcelltype", dot.min = 0.0001)) /
@@ -25,7 +21,7 @@ ggsave("DotPlots_P2RY14.pdf", width = 8, height = 7, units = "in")
   DotPlot(URINE, features = c("P2RY14", "CLEC4C", "IL3RA", "TCF4", "IRF7", "IRF8", "CBFA2T3", "BCL11A", "ATP6V1C2"),
           group.by = "renalcelltype", dot.min = 0.0001) +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)))
-ggsave("DotPlots_P2RY14_DC-CellMarkers.pdf", width = 10, height = 14, units = "in")
+ggsave("Output/Urine-AKI-scRNAseq_pDC-Markers-ATP6V1C2.pdf", width = 10, height = 14, units = "in")
 
 DotPlot(subset(URINE, renalcellgroup %in% c("Bcells", "Tcells", "MYEL")), features = "P2RY14", group.by = "renalcellgroup", split.by = "AKI_type",
         dot.min = 0.0001) +
@@ -132,4 +128,4 @@ plot.list = map(list("MYEL", "Bcells", "Tcells"), function(cell){
   plot.disease + plot.patient + plot_layout(widths = c(1,7))
 })
 wrap_plots(plot.list, ncol = 1)
-
+ggsave("Output/Urine-AKI-scRNAseq_pDC-Markers_Type-Patient.pdf", width = 16, height = 21)

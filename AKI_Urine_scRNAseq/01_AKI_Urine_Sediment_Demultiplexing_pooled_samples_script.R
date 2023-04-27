@@ -1,6 +1,6 @@
 
-setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/AKI_Immune_scRNAseq")
-source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/AKI_Urine_scRNAseq")
+source("../SourceFile_TW.R")
 
 # Data downloaded from: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE199321
 # Scripts downloaded from: https://github.com/janklocke/Urine-single-cell-sequencing-AKI
@@ -47,7 +47,7 @@ Pool3.data <- Read10X(data.dir = "UR_AKI_Pool3")
 Pool4.data <- Read10X(data.dir = "UR_AKI_Pool4")
 Pool5.data <- Read10X(data.dir = "UR_AKI_Pool5")
 Pool6.data <- Read10X(data.dir = "UR_AKI_Pool6")
-setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/AKI_Immune_scRNAseq")
+setwd("../")
 
 # Preparing the data ----
 
@@ -173,7 +173,7 @@ plot.tsne <- plot.list[[3]] + plot.list[[5]]+ plot_layout(guides= "collect") & t
                                                                                      text = element_text(size=24),
                                                                                      legend.text = element_text(size=24))
 
-png("plottsne.png", width=1600, height=700, type="cairo-png")
+png("Output/plottsne.png", width=1600, height=700, type="cairo-png")
 plot.tsne
 dev.off()
 
@@ -182,7 +182,7 @@ plot.heatmap <- HTOHeatmap(Pool3, assay = "HTO")+xlab("sample pool 1")+theme(axi
   HTOHeatmap(Pool5, assay = "HTO")+xlab("sample pool 2")+theme(axis.text.y=element_blank())+
   plot_layout(guides="collect") & theme(axis.title.x = element_text(size=24, face="bold"), legend.text = element_text(size=24),legend.title = element_text(size=24))
 
-png("plotheatmap.png", width=1600, height=400, type="cairo-png")
+png("Output/plotheatmap.png", width=1600, height=400, type="cairo-png")
 plot.heatmap
 dev.off()
 
@@ -222,7 +222,7 @@ d <-   RidgePlot(Pool3, assay = "HTO", features = "CD298B0254")&
 layout <- "ABCD"
 plot.ridge <- a+b+c+d+plot_layout(design=layout)
 
-png("plotridge.png", width=1600, height=400, type="cairo-png")
+png("Output/plotridge.png", width=1600, height=400, type="cairo-png")
 plot.ridge
 dev.off()
 
@@ -236,7 +236,7 @@ for (i in 1:length(PoolList)) {
 
 ## load barcode patient list ----
 # TW: Downloaded from https://raw.githubusercontent.com/janklocke/Urine-single-cell-sequencing-AKI/main/Urine_AKI_barcode_list.csv
-barcodes <- read.delim("Urine_AKI_barcode_list.csv", sep=";", fill = FALSE) # TW: Pool 3 P048 -> P049, Pool 5 P059 -> P061
+barcodes <- read.delim("Input/Urine_AKI_barcode_list.csv", sep=";", fill = FALSE) # TW: Pool 3 P048 -> P049, Pool 5 P059 -> P061
 rownames(barcodes) <- barcodes[,1]
 barcodes <- barcodes[,2:5]
 
@@ -262,5 +262,5 @@ for (i in 4){
 PoolNames <- c("AKI_Urine_sediment_Pool1.rds", "AKI_Urine_sediment_Pool3.rds","AKI_Urine_sediment_Pool2.rds", "AKI_Urine_sediment_Pool4.rds", "AKI_Urine_sediment_Pool5.rds", "AKI_Urine_sediment_Pool6.rds")
 
 for (i in 1:length(PoolList)) {
-  saveRDS(PoolList[[i]], file = PoolNames[[i]])
+  saveRDS(PoolList[[i]], file = paste0("Input/", PoolNames[[i]]))
 }

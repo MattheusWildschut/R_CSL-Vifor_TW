@@ -1,5 +1,5 @@
-setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/AKI_Immune_scRNAseq")
-source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/AKI_Urine_scRNAseq")
+source("../SourceFile_TW.R")
 
 # description ----
 
@@ -50,12 +50,12 @@ P024.2.data <- Read10X(data.dir = "Input/UR_AKI_P024.2")
 
 
 ## load seurat objects from demultiplexed samples (see "AKI_Urine_Sediment_Demultiplexing_pooled_samples_script") ----
-Pool1 <- readRDS("AKI_Urine_sediment_Pool1.rds") # TW: was ~/AKI_Urine_sediment_Pool1.rds
-Pool2 <- readRDS("AKI_Urine_sediment_Pool2.rds")
-Pool3 <- readRDS("AKI_Urine_sediment_Pool3.rds")
-Pool4 <- readRDS("AKI_Urine_sediment_Pool4.rds")
-Pool5 <- readRDS("AKI_Urine_sediment_Pool5.rds")
-Pool6 <- readRDS("AKI_Urine_sediment_Pool6.rds")
+Pool1 <- readRDS("Input/AKI_Urine_sediment_Pool1.rds") # TW: was ~/AKI_Urine_sediment_Pool1.rds
+Pool2 <- readRDS("Input/AKI_Urine_sediment_Pool2.rds")
+Pool3 <- readRDS("Input/AKI_Urine_sediment_Pool3.rds")
+Pool4 <- readRDS("Input/AKI_Urine_sediment_Pool4.rds")
+Pool5 <- readRDS("Input/AKI_Urine_sediment_Pool5.rds")
+Pool6 <- readRDS("Input/AKI_Urine_sediment_Pool6.rds")
 
 ### remove samples from patients without AKI in patient pools ----
 Pool4 = SetIdent(Pool4, value = "orig.ident") # added by TW
@@ -96,7 +96,7 @@ URINEList <- list(P005, P006, P007, P017.1, P017.2, P018.1, P018.2,
                   Pool1, Pool2, Pool3, Pool4, Pool5, Pool6)
 # URINEList <- list(Pool1, Pool2, Pool3, Pool4, Pool5, Pool6)
 
-URINE_post_QC_cellnames <- readRDS("URINE_AKI_post_QC_cellnames.rds") # TW put forward
+URINE_post_QC_cellnames <- readRDS("Input/URINE_AKI_post_QC_cellnames.rds") # TW put forward
 URINE_post_QC_cellnames = str_remove(URINE_post_QC_cellnames, "(?<=P[:digit:]{3}_).*__|(?<=POOL[:digit:]_).*__") %>% # TW ADDED
   str_remove("_[:digit:]$") # TW ADDED
 
@@ -133,7 +133,7 @@ URINE$AKI_timepoint.fine <- NA
 
 ## load clinical data ----
 # TW: downloaded from https://raw.githubusercontent.com/janklocke/Urine-single-cell-sequencing-AKI/main/Urine_AKI_patient_data.csv
-clin.data <- read.delim("URINE_AKI_patient_data.csv", sep = ";")
+clin.data <- read.delim("Input/URINE_AKI_patient_data.csv", sep = ";")
 clin.data$sample.pseudonym
 colnames(clin.data)
 
@@ -181,7 +181,7 @@ URINE_noQC <- URINE # TW: commented out
 # SO and skip the QC control subsetting steps and continue with the step "# gather simple info on SO ----":
 
 # TW: downloaded from https://github.com/janklocke/Urine-single-cell-sequencing-AKI/blob/main/URINE_AKI_post_QC_cellnames.rds
-URINE_post_QC_cellnames <- readRDS("URINE_AKI_post_QC_cellnames.rds") # TW: moved forward to loop
+URINE_post_QC_cellnames <- readRDS("Input/URINE_AKI_post_QC_cellnames.rds") # TW: moved forward to loop
 URINE_post_QC_cellnames = str_remove(URINE_post_QC_cellnames, "(?<=P[:digit:]{3}_).*__|(?<=POOL[:digit:]_).*__") %>% # TW ADDED
   # str_remove("_[:digit:]$") # TW ADDED
   str_remove("(?<=-1).*")
