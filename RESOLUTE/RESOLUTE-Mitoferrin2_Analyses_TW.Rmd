@@ -8,8 +8,8 @@ output: html_document
 Built with R version `r getRversion()`
 
 ```{r load packages & functions, include=FALSE}
-source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
 setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/RESOLUTE")
+source("../SourceFile_TW.R")
 
 ```
 

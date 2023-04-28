@@ -1,0 +1,32 @@
+---
+title: "RESOLUTE_Mitoferrin-2_Analyses"
+author: "Thijs (Mattheus) Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Built with R version `r getRversion()`
+
+```{r load packages & functions, include=FALSE}
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/TabulaSapiens")
+source("../SourceFile_TW.R")
+
+```
+
+```{r setup, include=FALSE}
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# TabulaSapiens
+
+## Trial
+Paper: https://www.science.org/stoken/author-tokens/ST-495/full \
+Kidney data: https://figshare.com/articles/dataset/Tabula_Sapiens_release_1_0/14267219?file=34701979 \
+
+### Load data
+```{r Load data}
+Convert("Input/TS_Kidney.h5ad", dest = "h5seurat", overwrite = TRUE)
+data = LoadH5Seurat("Input/TS_Kidney.h5seurat", assays = "RNA")
+DotPlot(data, features = "P2RY14", group.by = "cell_ontology_class", dot.min = 0.0001)
+
+```
