@@ -8,13 +8,13 @@ output: html_document
 Built with R version `r getRversion()`
 
 ```{r load packages & functions, include=FALSE}
-source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
 setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/P2Y14")
+source("../SourceFile_TW.R")
 
 ```
 
 ```{r setup, include=FALSE}
-opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
 # P2Y14 analyses {.tabset}
@@ -23,7 +23,7 @@ opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ### KPMP pDC gene correlations
 
 ```{r load KPMP data, include=FALSE}
-data.scRNA = LoadH5Seurat("../Input/521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat",
+data.scRNA = LoadH5Seurat("../KPMP/Input/521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat",
                           assays = list(RNA = c("data", "counts")))
 ```
 
@@ -209,7 +209,7 @@ plots
 ```{r Kidney perfusion 3, fig.height=4.25, fig.width=8.75}
 
 data.heat1 = data %>% 
-  filter(Timepoint == "2hr" & Treatment == "MNP") %>%
+  filter(Timepoint == "2hr" & Treatment == "NMP") %>%
   select(FLNC, C2CD4B, HSPA1A, HSPA1B, TRAF1, SERPINH1, HSPH1, IFIT2, ATP12A, REPS2, COL22A1, P2RY14, PADI4) %>%
   dplyr::mutate(across(everything(), scale)) %>%
   `rownames<-`(str_extract(rownames(.), "subject[:digit:]{1,2}")) %>% t
@@ -226,7 +226,7 @@ heat.1 = Heatmap(data.heat1[,pat.order1], name = "Row Z Score", top_annotation =
         border = TRUE, rect_gp = gpar(col = "grey30"), show_column_names = FALSE)
 
 data.heat2 = data %>% 
-  filter(Timepoint == "2hr" & Treatment == "MNP") %>%
+  filter(Timepoint == "2hr" & Treatment == "NMP") %>%
   select(HES2, TRAF3IP3, HSPA1L, CYP2B6, TRIM10, G0S2, NUDC, AHSA2, P2RY14, PADI4) %>%
   dplyr::mutate(across(everything(), scale)) %>%
   `rownames<-`(str_extract(rownames(.), "subject[:digit:]{1,2}")) %>% t
@@ -280,4 +280,31 @@ gsea.ferd = function(conditions){
 }
 gsea.ferd("All")/gsea.ferd("Basal")
 
+```
+
+## Kidney pig perfusion model
+McEvoy *et al.*, Normothermic Ex-vivo Kidney Perfusion in a Porcine Auto-Transplantation Model Preserves the Expression of Key Mitochondrial Proteins: An Unbiased Proteomics Analysis. **Mol Cell Proteomics 2021** \
+Paper: https://www.sciencedirect.com/science/article/pii/S1535947621000748 \
+Proteomics data: https://ars.els-cdn.com/content/image/1-s2.0-S1535947621000748-mmc2.xlsx \
+Targeted metabolomics data: https://ars.els-cdn.com/content/image/1-s2.0-S1535947621000748-mmc11.xlsx
+
+### Boxplots different timepoints & treatments
+```{r Pig kidney perfusion McEvoy 2021, fig.height=6, fig.width=11}
+raw.data = read.xlsx("Input/mmc2.xlsx", sheetIndex = 1, rowIndex = c(1,4:5060))
+annot = read.xlsx("Input/mmc2.xlsx", sheetIndex = 1, rowIndex = c(1,2,3)) %>% t %>% as.data.frame %>%
+  mutate(Condition = rownames(.),
+         Timepoint = str_remove(V1, "#!\\{C:Time\\}"),
+         Group = str_remove(V2, "#!\\{C:Group\\}")) %>%
+  select(Condition, Timepoint, Group) %>%
+  drop_na
+
+data = raw.data %>% 
+  select(Majority.protein.IDs, contains("LFQ")) %>%
+  column_to_rownames("Majority.protein.IDs") %>%
+  t %>% as.data.frame %>%
+  rownames_to_column("Condition") %>%
+  select(Condition, contains("F1SJN3")) %>%
+  join(annot, by = "Condition")
+print("P2Y14 and PAD4 are not detected in this dataset")
+  
 ```
