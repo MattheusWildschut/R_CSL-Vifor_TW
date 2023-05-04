@@ -41,3 +41,120 @@ map(list.projects, function(x){
   x
 })
 dev.off()
+
+## Trial OpenTargets API --------------------------------------------------------------------------------
+library(httr)
+gene_id <- "ENSG00000174944" #P2RY14
+gene_id <- "ENSG00000159339" #PADI4
+gene_id <- "ENSG00000146648" #EGFR
+
+query_string = "
+  query target($ensemblId: String!){
+    target(ensemblId: $ensemblId){
+      id
+      approvedSymbol
+      biotype
+      associatedDiseases(page: { index: 0, size: 30 }){
+        count
+        rows{
+          disease{
+            name
+            therapeuticAreas{
+              name
+            }
+          }
+          score
+          datatypeScores{
+            id
+            score
+          }
+        }
+      }
+    }
+  }
+"
+
+base_url <- "https://api.platform.opentargets.org/api/v4/graphql"
+variables <- list("ensemblId" = gene_id)
+post_body <- list(query = query_string, variables = variables)
+r <- POST(url=base_url, body=post_body, encode='json')
+
+data = httr::content(r)$data
+# x = data$target$associatedDiseases$rows[[19]]
+data3 = map_dfr(data$target$associatedDiseases$rows, function(x){
+  c(setNames(c(x[[1]]$name, paste(unlist(x[[1]]$therapeuticAreas), collapse = " | "), x[[2]]), 
+             c("Disease_name", "Therapeutic_area", "Disease_score")), 
+    x[[3]] %>% map_dfr(unlist) %>% pivot_wider(names_from = "id", values_from = "score"))
+})
+data4 = data3 %>%
+  dplyr::mutate(across(.cols = !Disease_name & !Therapeutic_area, .fns = as.numeric)) %>%
+  pivot_longer(cols = -Disease_name & -Therapeutic_area, names_to = "Scores", values_to = "Score")
+
+areas = unique(as.vector(str_split(data4$Therapeutic_area, " \\| ", simplify = TRUE)))
+areas2 = map_dfc(as.list(areas[areas != ""]), function(x) setNames(data.frame(str_detect(data4$Therapeutic_area, x)), x)) %>%
+  mutate("Disease_name" = data4$Disease_name) %>%
+  pivot_longer(cols = -Disease_name) %>%
+  `colnames<-`(c("Disease_name", "Area", "InArea"))
+
+diseaseTypes = c("Disease_score", "genetic_association", "somatic_mutation", "known_drug", "affected_pathway", "literature", "rna_expression", "animal_model")
+diseaseTypeLabels = c("Overall association score", "Genetic associations", "Somatic mutations", "Drugs", "Pathways & systems biology",
+                      "Text mining", "RNA expression", "Animal models")
+
+data5 = data4 %>% left_join(areas2, by = "Disease_name", multiple = "all") %>%
+  mutate(Disease_name = factor(Disease_name, levels = data3$Disease_name),
+         Urinary = factor(str_detect(Therapeutic_area, "urinary system disease"), levels = c(TRUE, FALSE), labels = c("Urinary", "Other")),
+         Scores = factor(Scores, levels = diseaseTypes, labels = diseaseTypeLabels)) %>%
+  complete(Scores, nesting(Disease_name, Therapeutic_area, Area, Urinary, InArea))
+
+plot1 = ggplot(data5, aes(x = Scores, y = Disease_name, fill = Score)) +
+  geom_tile(col = "grey90") +
+  scale_fill_viridis(na.value = "white") + scale_y_discrete(limits = rev) + scale_x_discrete(drop = FALSE) +
+  facet_grid(rows = vars(Urinary), scales = "free", space = "free") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), plot.title = element_text(hjust = 0.5), 
+        strip.background = element_blank(), strip.text.y = element_blank()) + 
+  labs(x = NULL, y = NULL, title = "Association scores")
+
+plot2 = ggplot(data5, aes(x = Area, y = Disease_name, fill = InArea)) +
+  geom_tile(col = "grey90") +
+  scale_fill_manual(values = c("FALSE" = "white", "TRUE" = "black")) + scale_y_discrete(limits = rev) + 
+  facet_grid(rows = vars(Urinary), scales = "free", space = "free") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), plot.title = element_text(hjust = 0.5),
+        strip.text.y = element_text(angle = 0), axis.text.y = element_blank(), axis.ticks.y = element_blank()) + 
+  labs(x = NULL, y = NULL, title = "Disease areas") + guides(fill = "none")
+
+plot1 + plot2 + plot_layout(guides = "collect", widths = c(1,2))
+
+
+# ## Second trial using FTP download ---------------
+# library(dplyr)
+# library(sparklyr)
+# library(sparklyr.nested)
+# # spark_install(version = "3.3")
+# 
+# setwd("Input/OpenTargets")
+# conf <- spark_config()
+# conf$`sparklyr.cores.local` <- 20
+# conf$`sparklyr.shell.driver-memory` <- "32G"
+# conf$spark.memory.fraction <- 0.9
+# 
+# # Connect to Spark
+# sc <- spark_connect(master = "local", config = conf)
+# evd <- spark_read_parquet(sc, path = "Evidence_TargetDisease")
+# # annot.dis = spark_read_parquet(sc, path = "Annotations_DiseasePhenotype")
+# 
+# ## Browse the evidence schema
+# columns <- evd %>%
+#   sdf_schema() %>%
+#   lapply(function(x) do.call(tibble, x)) %>%
+#   bind_rows()
+# 
+# ## select fields of interest
+# evdSelect <- evd %>%
+#   select(targetFromSourceId,
+#          diseaseFromSourceMappedId,
+#          datasourceId,
+#          datatypeId,
+#          resourceScore)
+# 
+# # Convert to a dplyr tibble
+# openTargets = collect(evdSelect)
