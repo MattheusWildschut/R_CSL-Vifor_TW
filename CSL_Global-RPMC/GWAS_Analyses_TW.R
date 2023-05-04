@@ -139,7 +139,8 @@ OT_query = function(gene_id){
     scale_fill_viridis(na.value = "white") + scale_y_discrete(limits = rev) + scale_x_discrete(drop = FALSE) +
     facet_grid(rows = vars(Kidney), scales = "free", space = "free") +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), plot.title = element_text(hjust = 0.5), 
-          strip.background = element_blank(), strip.text.y = element_blank()) + 
+          strip.background = element_blank(), strip.text.y = element_blank(),
+          text = element_text(size = 18)) + 
     labs(x = NULL, y = NULL, title = paste("Association scores", gene_id))
   
   plot2 = ggplot(data5, aes(x = Area, y = Disease_name, fill = InArea)) +
@@ -147,10 +148,51 @@ OT_query = function(gene_id){
     scale_fill_manual(values = c("FALSE" = "white", "TRUE" = "black")) + scale_y_discrete(limits = rev) + 
     facet_grid(rows = vars(Kidney), scales = "free", space = "free") +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), plot.title = element_text(hjust = 0.5),
-          strip.text.y = element_text(angle = 0), axis.text.y = element_blank(), axis.ticks.y = element_blank()) + 
+          strip.text.y = element_text(angle = 0), axis.text.y = element_blank(), axis.ticks.y = element_blank(),
+          text = element_text(size = 18)) + 
     labs(x = NULL, y = NULL, title = "Disease areas") + guides(fill = "none")
   
   plot1 + plot2 + plot_layout(guides = "collect", widths = c(1, 1.5))
 }
+
+ui = {fluidPage(
+  # titlePanel("CSL-Vifor_KPMP-browser_TW"),
+  tabsetPanel(
+    tabPanel("Target-disease associations",
+             sidebarLayout(
+               sidebarPanel(
+                 pickerInput(inputId = "gene",
+                             label = "Select target gene",
+                             choices = HGNC$`Approved symbol`[HGNC$`Ensembl ID(supplied by Ensembl)` != ""],
+                             selected = "P2RY14"),
+                 downloadBttn(outputId = "download",
+                              label = list(icon("file-pdf"), "Download Plot"),
+                              color = "danger", size = "sm")
+                 ),
+               mainPanel(
+                 plotOutput("plot")
+                 )
+               )
+             )
+    )
+  )}
+
+## Server ----------------------------------------------------------------------------------------------------------------------------------
+server = function(input, output, session) {
+  session$onSessionEnded(function() {
+    stopApp()
+  })
+  OT_plot = reactive(OT_query(input$gene))
+  output$plot = renderPlot(OT_plot(), height = 900)
+  output$download = downloadHandler(
+    filename = function() { paste0("OpenTargets-Query_", input$gene, "_", Sys.Date(), ".pdf") },
+    content = function(file) {
+      ggsave(file, OT_plot(), width = 16, height = 15)
+  })
+}
+
+## App ------------------------------------------------------------------------------------------------------------------------
+shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
+
 OT_query("PADI4")
 ggsave("Output/OpenTargets-Query_PADI4.pdf", width = 11, height = 10)
