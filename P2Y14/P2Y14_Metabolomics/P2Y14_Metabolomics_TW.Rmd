@@ -18,7 +18,7 @@ opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
 ### Load & plot data
 
-```{r Load & plot data, fig.width=7, fig.height=7}
+```{r Load & plot data, fig.width=7, fig.height=7, echo=FALSE}
 pat.annot2 = read.csv("Input/72ec8f42-750f-4e1b-bda9-7300d4de1365_20221208_OpenAccessClinicalData.csv")
 pat.annot = read.csv("Input/KPMP_Metabolomics_PatientAnnotations.csv", sep = ";") %>%
   `colnames<-`(str_to_title(colnames(.))) %>%
@@ -100,7 +100,7 @@ Data downloaded from https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7231503/#suppl
 data.raw = read.xlsx("Input/peerj-08-9111-s004_Wang2020.xlsx", sheetName = " A vs B metabolomics results")
 annot = read.xlsx("Input/peerj-08-9111-s004_Wang2020.xlsx", sheetName = "raw data of pilot cohort", rowIndex = c(2:8, 10:15))
 data = data.raw %>%
-  select(Compounds, contains("AKI")) %>%
+  dplyr::select(Compounds, contains("AKI")) %>%
   pivot_longer(-Compounds, names_to = "Patient", values_to = "Intensity") %>%
   mutate(Disease = factor(str_extract(Patient, "NAKI|AKI"), levels = c("NAKI", "AKI"), labels = c("No AKI", "AKI")),
          Operation = factor(str_extract(Patient, "A$|B$"), levels = c("A", "B"), labels = c("Pre-operative", "Post-operative")),
