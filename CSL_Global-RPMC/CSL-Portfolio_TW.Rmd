@@ -1,0 +1,118 @@
+---
+title: "CSL-Portfolio_TW"
+author: "Thijs (Mattheus) Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Built with R version `r getRversion()`
+
+```{r load packages & functions, include=FALSE}
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/CSL_Global-RPMC")
+source("../SourceFile_TW.R")
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# CSL assets with potential application in nephrology
+
+## Lupus Nephritis
+Highlighted drugs:
+
+- CSL305 - anti-**C2** mAb - dual FcRn blocker & complement CP & LP inhibitor
+- CSL040 - soluble **CR1** - complement pathway inhibitor
+- CSL300 - anti-**IL-6** - anti-inflammatory
+- Vamifeport - Ferroportin/**SLC40A1**
+
+Strategy taken: scRNAseq data of LN patients
+
+Data downloaded from: https://singlecell.broadinstitute.org/single_cell/study/SCP279/amp-phase-1
+
+- Paper 1: AMP Phase 1 - Dataset 2: Lupus Nephritis (Broad Institute) 
+  - https://www.nature.com/articles/s41590-019-0398-x
+  - Arazi *et al.*, The immune cell landscape in kidneys of patients with lupus nephritis, *Nature Immunology* 2019
+- Paper 2: AMP Phase 1 - Dataset 3: Lupus Nephritis (NYU Langone - Metro)
+  - https://www.nature.com/articles/s41590-019-0386-1
+  - Der *et al.*, Tubular cell and keratinocyte single-cell transcriptomics applied to lupus nephritis reveal type I IFN and fibrosis relevant pathways, **Nature Immunology**, 2019
+
+### Load data
+```{r Load data}
+annot = fread("Input/LupusNephritis/meta.gz")
+data1 = fread("Input/LupusNephritis/exprMatrixSleBroad.tsv.gz")
+data2 = fread("Input/LupusNephritis/exprMatrixSleMetro.tsv.gz")
+
+
+```
+
+### Set up query functions
+```{r Query functions}
+
+```
+
+### Lupus bulk transcriptomics - longitudinal
+```{r Lupus bulk transcriptomics}
+data3 = getGEO("GSE65391")[[1]]
+annot.pat = data3@phenoData@data %>%
+  filter(`set:ch1` != "Technical_Replicate") %>%
+  dplyr::select(geo_accession, `subject:ch1`, `disease state:ch1`, `visit:ch1`, `disease_activity:ch1`, `sledai:ch1`, `treatment_lmm1:ch1`) %>%
+  `colnames<-`(str_remove(colnames(.), "\\:ch1"))
+annot.gene = data3@featureData@data
+expr = data3@assayData$exprs %>% as.data.frame %>%
+  dplyr::mutate(Gene = annot.gene$ILMN_Gene[match(rownames(.), annot.gene$ID)]) %>%
+  group_by(Gene) %>% dplyr::summarise(across(everything(), max))
+expr2 = expr %>%
+  column_to_rownames("Gene") %>% t %>% as.data.frame %>%
+  rownames_to_column("geo_accession") %>% inner_join(annot.pat, by = "geo_accession")
+
+expr2$c1q
+ggplot(expr2, aes(x = `disease state`, y = C2)) +
+  geom_boxplot()
+
+```
+
+### Fetuin-A
+Fetuin-A = AHSG = P02765 = FETUA_Human = Alpha-2-HS-glycoprotein
+
+- Paper URL: https://www.frontiersin.org/articles/10.3389/fbioe.2022.1002853/full
+- Data downloaded from: https://www.frontiersin.org/articles/10.3389/fbioe.2022.1002853/full#supplementary-material
+  - Table 4.xls
+
+```{r Fetuin-A, fig.height=4, fig.width=7}
+raw.data = fread("Input/Bai2022_UrinaryProteomics_Table 4.csv")
+data = raw.data %>% 
+  column_to_rownames("Protein") %>%
+  select(-ProteinGroup) %>%
+  t %>% as.data.frame %>%
+  mutate(Patient = factor(rep(1:6, 2)),
+         TimePoint = factor(rep(c("After surgery (Day 1)", "Before surgery"), each = 6),
+                            levels = c("Before surgery", "After surgery (Day 1)")))
+
+colnames(data)[str_detect(colnames(data), "P02765")]
+data = data %>% mutate(norm_FetuinA = `sp|P02765|FETUA_HUMAN`-`sp|P01034|CYTC_HUMAN`)
+
+box.plot = ggplot(data, aes(x = TimePoint, y = `sp|P02765|FETUA_HUMAN`, fill = TimePoint)) +
+  geom_boxplot() +
+  stat_compare_means(comparisons = list(c(1,2)), method = "t.test", label = "p.signif", hide.ns = TRUE, paired = TRUE,
+                       vjust = 0.5, step.increase = 0.07, tip.length = 0.02) +
+  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + xlab(NULL)
+
+line.plot = ggplot(data, aes(x = TimePoint, y = `sp|P02765|FETUA_HUMAN`, group = Patient, col = Patient)) +
+  geom_line() + geom_point() +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+t.test(x = data$`sp|P02765|FETUA_HUMAN`[data$TimePoint == "After surgery (Day 1)"], 
+       y = data$`sp|P02765|FETUA_HUMAN`[data$TimePoint == "Before surgery"],
+       paired = TRUE, alternative = "two.sided")
+
+box.plot + line.plot
+ggsave("Output/Bai2022_UrinaryProteomics_FetuinA.pdf", height = 4, width = 7)
+
+```
+
+### IL-6
+```{r IL-6}
+
+```
