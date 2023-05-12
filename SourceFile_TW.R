@@ -41,6 +41,7 @@ suppressPackageStartupMessages({
   library(tidyverse)
   library(plyr)
   library(shinyjs)
+  library(httr)
 })
 options(dplyr.summarise.inform = FALSE)
 options(clusterProfiler.download.method = "auto")

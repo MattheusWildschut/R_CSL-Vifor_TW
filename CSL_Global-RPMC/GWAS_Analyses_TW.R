@@ -43,12 +43,13 @@ map(list.projects, function(x){
 dev.off()
 
 ## Trial OpenTargets API --------------------------------------------------------------------------------
-library(httr)
 # Downloaded from https://www.genenames.org/download/custom/, selected Ensembl ID
-HGNC = fread("../Other/Input/HGNC_GeneNames_04-05-23.csv")
+library(httr)
+HGNC = data.table::fread("../Other/Input/HGNC_GeneNames_04-05-23.csv")
 
+gene_id = "C1R"
 OT_query = function(gene_id){
-  ensembl_id = na.omit(HGNC$`Ensembl ID(supplied by Ensembl)`[HGNC$`Approved symbol` == gene_id])
+  ensembl_id = na.omit(HGNC$`Ensembl ID(supplied by Ensembl)`[HGNC$`Approved symbol` == gene_id])[1]
   query_string = "
   query target($ensemblId: String!){
     target(ensemblId: $ensemblId){
@@ -114,26 +115,27 @@ OT_query = function(gene_id){
                                 levels = c("kidney disease", "renal system measurement", "Other"), labels = c("Kidney disease", "Renal measurement", "Other"))) %>%
     group_by(Kidney) %>% slice_max(Disease_score, n = 25) %>% ungroup# %>% dplyr::select(-Kidney)
   
-  data4 = data3 %>%
-    dplyr::mutate(across(.cols = !Disease_name & !Therapeutic_area & !Disease_parents & !Kidney, .fns = as.numeric)) %>%
-    pivot_longer(cols = -Disease_name & -Therapeutic_area & -Disease_parents & -Kidney, names_to = "Scores", values_to = "Score")
-  
-  areas = unique(as.vector(str_split(data4$Therapeutic_area, " \\| ", simplify = TRUE)))
-  areas2 = map_dfc(as.list(areas[areas != ""]), function(x) setNames(data.frame(str_detect(data4$Therapeutic_area, x)), x)) %>%
-    mutate("Disease_name" = data4$Disease_name) %>%
-    pivot_longer(cols = -Disease_name) %>%
-    `colnames<-`(c("Disease_name", "Area", "InArea"))
-  
   diseaseTypes = c("Disease_score", "genetic_association", "somatic_mutation", "known_drug", "affected_pathway", "literature", "rna_expression", "animal_model")
   diseaseTypeLabels = c("Overall association score", "Genetic associations", "Somatic mutations", "Drugs", "Pathways & systems biology",
                         "Text mining", "RNA expression", "Animal models")
   
+  data4 = data3 %>%
+    dplyr::mutate(across(.cols = !Disease_name & !Therapeutic_area & !Disease_parents & !Kidney, .fns = as.numeric)) %>%
+    pivot_longer(cols = -Disease_name & -Therapeutic_area & -Disease_parents & -Kidney, names_to = "Scores", values_to = "Score") %>%
+    mutate(Scores = factor(Scores, levels = diseaseTypes, labels = diseaseTypeLabels))
+  
+  areas = unique(as.vector(str_split(data3$Therapeutic_area, " \\| ", simplify = TRUE)))
+  areas2 = map_dfc(as.list(areas[areas != ""]), function(x) setNames(data.frame(str_detect(data3$Therapeutic_area, x)), x)) %>%
+    mutate("Disease_name" = data3$Disease_name) %>%
+    pivot_longer(cols = -Disease_name) %>%
+    `colnames<-`(c("Disease_name", "Area", "InArea"))
+
   data5 = data4 %>% left_join(areas2, by = "Disease_name", multiple = "all") %>%
     mutate(Disease_name = factor(Disease_name, levels = data3$Disease_name),
            # Urinary = factor(str_detect(Therapeutic_area, "urinary system disease"), levels = c(TRUE, FALSE), labels = c("Urinary", "Other")),
-           Scores = factor(Scores, levels = diseaseTypes, labels = diseaseTypeLabels)) %>%
+           ) %>%
     complete(Scores, nesting(Disease_name, Therapeutic_area, Area, Kidney, InArea))
-  
+
   plot1 = ggplot(data5, aes(x = Scores, y = Disease_name, fill = Score)) +
     geom_tile(col = "grey90") +
     scale_fill_viridis(na.value = "white") + scale_y_discrete(limits = rev) + scale_x_discrete(drop = FALSE) +
@@ -152,7 +154,8 @@ OT_query = function(gene_id){
           text = element_text(size = 18)) + 
     labs(x = NULL, y = NULL, title = "Disease areas") + guides(fill = "none")
   
-  plot1 + plot2 + plot_layout(guides = "collect", widths = c(1, 1.5))
+  plots = plot1 + plot2 + plot_layout(guides = "collect", widths = c(1, 1.5))
+  return(list("plots" = plots, "data4" = data4, "data5" = data5))
 }
 
 ui = {fluidPage(
@@ -182,7 +185,7 @@ server = function(input, output, session) {
   session$onSessionEnded(function() {
     stopApp()
   })
-  OT_plot = reactive(OT_query(input$gene))
+  OT_plot = reactive(OT_query(input$gene)$plots)
   output$plot = renderPlot(OT_plot(), height = 900)
   output$download = downloadHandler(
     filename = function() { paste0("OpenTargets-Query_", input$gene, "_", Sys.Date(), ".pdf") },
@@ -194,5 +197,17 @@ server = function(input, output, session) {
 ## App ------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
 
-OT_query("PADI4")
-ggsave("Output/OpenTargets-Query_PADI4.pdf", width = 11, height = 10)
+gene.list = list("CR1", "C1QA", "C1QB", "C1QC", "C1R", "C1S", "C2", "C3", "C4A", "C4B", "C5")
+gene.list = list("CCL17", "IL3RA", "LY96", "CXCR3")
+
+OT_list = map_dfr(gene.list, function(gene){
+  data.frame("Gene" = gene, OT_query(gene)$data4)
+})
+data.OT = OT_list %>%
+  filter(Kidney %in% c("Kidney disease", "Renal measurement")) %>%# & !is.na(Score)) #& Scores == "genetic_association" & 
+  complete(Gene, Scores, Disease_name)
+ggplot(data.OT, aes(x = Gene, y = Disease_name, fill = Score)) +
+  geom_tile(col = "grey90") +
+  scale_fill_viridis(na.value = "white") + scale_y_discrete(limits = rev) + scale_x_discrete(drop = FALSE) +
+  facet_grid(.~Scores, scales = "free") +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
