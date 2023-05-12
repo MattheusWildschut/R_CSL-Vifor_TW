@@ -19,6 +19,54 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
 # CSL assets with potential application in nephrology
 
+## AKI
+
+### Fetuin-A
+Fetuin-A = AHSG = P02765 = FETUA_Human = Alpha-2-HS-glycoprotein
+
+- Paper URL: https://www.frontiersin.org/articles/10.3389/fbioe.2022.1002853/full
+- Data downloaded from: https://www.frontiersin.org/articles/10.3389/fbioe.2022.1002853/full#supplementary-material
+  - Table 4.xls
+
+```{r Fetuin-A, fig.height=4, fig.width=7}
+raw.data = fread("Input/Bai2022_UrinaryProteomics_Table 4.csv")
+data = raw.data %>% 
+  column_to_rownames("Protein") %>%
+  select(-ProteinGroup) %>%
+  t %>% as.data.frame %>%
+  mutate(Patient = factor(rep(1:6, 2)),
+         TimePoint = factor(rep(c("After surgery (Day 1)", "Before surgery"), each = 6),
+                            levels = c("Before surgery", "After surgery (Day 1)")))
+
+colnames(data)[str_detect(colnames(data), "P02765")]
+data = data %>% mutate(norm_FetuinA = `sp|P02765|FETUA_HUMAN`-`sp|P01034|CYTC_HUMAN`)
+
+box.plot = ggplot(data, aes(x = TimePoint, y = `sp|P02765|FETUA_HUMAN`, fill = TimePoint)) +
+  geom_boxplot() +
+  stat_compare_means(comparisons = list(c(1,2)), method = "t.test", label = "p.signif", hide.ns = TRUE, paired = TRUE,
+                       vjust = 0.5, step.increase = 0.07, tip.length = 0.02) +
+  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + xlab(NULL)
+
+line.plot = ggplot(data, aes(x = TimePoint, y = `sp|P02765|FETUA_HUMAN`, group = Patient, col = Patient)) +
+  geom_line() + geom_point() +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+box.plot + line.plot
+ggsave("Output/Bai2022_UrinaryProteomics_FetuinA.pdf", height = 4, width = 7)
+
+```
+
+### Mouse model of septic AKI
+
+- Paper: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7710145/
+- Data downloaded: Supplementary Table S1 ("162338_1_supp_596735_qgmqcy.xlsx")
+
+```{r Septic-AKI mouse}
+
+
+```
+
+
 ## Lupus Nephritis
 Highlighted drugs:
 
@@ -53,64 +101,29 @@ data2 = fread("Input/LupusNephritis/exprMatrixSleMetro.tsv.gz")
 ```
 
 ### Lupus bulk transcriptomics - longitudinal
-```{r Lupus bulk transcriptomics}
+```{r Lupus bulk transcriptomics, fig.width=4, fig.height=3.5}
 data3 = getGEO("GSE65391")[[1]]
 annot.pat = data3@phenoData@data %>%
   filter(`set:ch1` != "Technical_Replicate") %>%
   dplyr::select(geo_accession, `subject:ch1`, `disease state:ch1`, `visit:ch1`, `disease_activity:ch1`, `sledai:ch1`, `treatment_lmm1:ch1`) %>%
-  `colnames<-`(str_remove(colnames(.), "\\:ch1"))
+  `colnames<-`(str_replace(str_remove(colnames(.), "\\:ch1"), " ", "_"))
 annot.gene = data3@featureData@data
 expr = data3@assayData$exprs %>% as.data.frame %>%
   dplyr::mutate(Gene = annot.gene$ILMN_Gene[match(rownames(.), annot.gene$ID)]) %>%
   group_by(Gene) %>% dplyr::summarise(across(everything(), max))
 expr2 = expr %>%
   column_to_rownames("Gene") %>% t %>% as.data.frame %>%
-  rownames_to_column("geo_accession") %>% inner_join(annot.pat, by = "geo_accession")
+  rownames_to_column("geo_accession") %>% inner_join(annot.pat, by = "geo_accession") %>%
+  mutate(disease_activity = factor(ifelse(disease_state == "Healthy", "Healthy", paste0("SLE_", disease_activity)),
+                                   levels = c("Healthy", paste0("SLE_", 1:3))))
 
-expr2$c1q
-ggplot(expr2, aes(x = `disease state`, y = C2)) +
-  geom_boxplot()
-
-```
-
-### Fetuin-A
-Fetuin-A = AHSG = P02765 = FETUA_Human = Alpha-2-HS-glycoprotein
-
-- Paper URL: https://www.frontiersin.org/articles/10.3389/fbioe.2022.1002853/full
-- Data downloaded from: https://www.frontiersin.org/articles/10.3389/fbioe.2022.1002853/full#supplementary-material
-  - Table 4.xls
-
-```{r Fetuin-A, fig.height=4, fig.width=7}
-raw.data = fread("Input/Bai2022_UrinaryProteomics_Table 4.csv")
-data = raw.data %>% 
-  column_to_rownames("Protein") %>%
-  select(-ProteinGroup) %>%
-  t %>% as.data.frame %>%
-  mutate(Patient = factor(rep(1:6, 2)),
-         TimePoint = factor(rep(c("After surgery (Day 1)", "Before surgery"), each = 6),
-                            levels = c("Before surgery", "After surgery (Day 1)")))
-
-colnames(data)[str_detect(colnames(data), "P02765")]
-data = data %>% mutate(norm_FetuinA = `sp|P02765|FETUA_HUMAN`-`sp|P01034|CYTC_HUMAN`)
-
-box.plot = ggplot(data, aes(x = TimePoint, y = `sp|P02765|FETUA_HUMAN`, fill = TimePoint)) +
-  geom_boxplot() +
-  stat_compare_means(comparisons = list(c(1,2)), method = "t.test", label = "p.signif", hide.ns = TRUE, paired = TRUE,
-                       vjust = 0.5, step.increase = 0.07, tip.length = 0.02) +
-  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + xlab(NULL)
-
-line.plot = ggplot(data, aes(x = TimePoint, y = `sp|P02765|FETUA_HUMAN`, group = Patient, col = Patient)) +
-  geom_line() + geom_point() +
-  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-
-t.test(x = data$`sp|P02765|FETUA_HUMAN`[data$TimePoint == "After surgery (Day 1)"], 
-       y = data$`sp|P02765|FETUA_HUMAN`[data$TimePoint == "Before surgery"],
-       paired = TRUE, alternative = "two.sided")
-
-box.plot + line.plot
-ggsave("Output/Bai2022_UrinaryProteomics_FetuinA.pdf", height = 4, width = 7)
+ggplot(expr2, aes(x = disease_activity, y = NGAL, fill = disease_activity)) +
+  geom_boxplot(alpha = 0.5, outlier.alpha = 0) + geom_jitter(width = 0.2, alpha = 0.1) +
+  labs(x = NULL) +
+  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 
 ```
+
 
 ### IL-6
 ```{r IL-6}
