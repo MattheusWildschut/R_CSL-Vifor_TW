@@ -19,6 +19,179 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
 # CSL assets with potential application in nephrology
 
+## OpenTargets overviews
+
+### OpenTargets query function
+```{r OpenTargets query function, include=FALSE}
+library(httr)
+HGNC = data.table::fread("../Other/Input/HGNC_GeneNames_04-05-23.csv")
+
+gene_id = "PLG"
+OT_query = function(gene_id){
+  ensembl_id = na.omit(HGNC$`Ensembl ID(supplied by Ensembl)`[HGNC$`Approved symbol` == gene_id])[1]
+  query_string = "
+  query target($ensemblId: String!){
+    target(ensemblId: $ensemblId){
+      id
+      approvedSymbol
+      biotype
+      associatedDiseases(page: { index: 0, size: 10000 }){
+        count
+        rows{
+          disease{
+            name
+            therapeuticAreas{
+              name
+            }
+            parents{
+              name
+              parents{
+                name
+                parents{
+                  name
+                  parents{
+                    name
+                    parents{
+                      name
+                      parents{
+                        name
+                        parents{
+                          name
+                          parents{
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          score
+          datatypeScores{
+            id
+            score
+          }
+        }
+      }
+    }
+  }
+"
+  
+  base_url <- "https://api.platform.opentargets.org/api/v4/graphql"
+  variables <- list("ensemblId" = ensembl_id)
+  post_body <- list(query = query_string, variables = variables)
+  r <- POST(url=base_url, body=post_body, encode='json')
+  
+  data = httr::content(r)$data
+  data3 = map_dfr(data$target$associatedDiseases$rows, function(x){
+    c(setNames(c(x[[1]]$name, paste(unlist(x[[1]]$therapeuticAreas), collapse = " | "), paste(unlist(x[[1]]$parents), collapse = " | "), x[[2]]), 
+               c("Disease_name", "Therapeutic_area", "Disease_parents", "Disease_score")), 
+      x[[3]] %>% map_dfr(unlist) %>% pivot_wider(names_from = "id", values_from = "score"))
+  }) %>% mutate(Kidney = factor(replace_na(str_extract(Disease_parents, "kidney disease|renal system measurement"), "Other"),
+                                levels = c("kidney disease", "renal system measurement", "Other"), labels = c("Kidney disease", "Renal measurement", "Other"))) %>%
+    group_by(Kidney) %>% slice_max(Disease_score, n = 25) %>% ungroup
+  
+  diseaseTypes = c("Disease_score", "genetic_association", "somatic_mutation", "known_drug", "affected_pathway", "literature", "rna_expression", "animal_model")
+  diseaseTypeLabels = c("Overall\nassociation score", "Genetic associations", "Somatic mutations", "Drugs", "Pathways\n& systems biology",
+                        "Text mining", "RNA expression", "Animal models")
+  
+  data4 = data3 %>%
+    dplyr::mutate(across(.cols = !Disease_name & !Therapeutic_area & !Disease_parents & !Kidney, .fns = as.numeric)) %>%
+    pivot_longer(cols = -Disease_name & -Therapeutic_area & -Disease_parents & -Kidney, names_to = "Scores", values_to = "Score") %>%
+    mutate(Scores = factor(Scores, levels = diseaseTypes, labels = diseaseTypeLabels))
+  
+  areas = unique(as.vector(str_split(data3$Therapeutic_area, " \\| ", simplify = TRUE)))
+  areas2 = map_dfc(as.list(areas[areas != ""]), function(x) setNames(data.frame(str_detect(data3$Therapeutic_area, x)), x)) %>%
+    mutate("Disease_name" = data3$Disease_name) %>%
+    pivot_longer(cols = -Disease_name) %>%
+    `colnames<-`(c("Disease_name", "Area", "InArea"))
+
+  data5 = data4 %>% left_join(areas2, by = "Disease_name", multiple = "all") %>%
+    mutate(Disease_name = factor(Disease_name, levels = data3$Disease_name)) %>%
+    complete(Scores, nesting(Disease_name, Therapeutic_area, Area, Kidney, InArea))
+
+  plot1 = ggplot(data5, aes(x = Scores, y = Disease_name, fill = Score)) +
+    geom_tile(col = "grey90") +
+    scale_fill_viridis(na.value = "white") + scale_y_discrete(limits = rev) + scale_x_discrete(drop = FALSE) +
+    facet_grid(rows = vars(Kidney), scales = "free", space = "free") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), plot.title = element_text(hjust = 0.5), 
+          strip.background = element_blank(), strip.text.y = element_blank(),
+          text = element_text(size = 18)) + 
+    labs(x = NULL, y = NULL, title = paste("Association scores", gene_id))
+  
+  plot2 = ggplot(data5, aes(x = Area, y = Disease_name, fill = InArea)) +
+    geom_tile(col = "grey90") +
+    scale_fill_manual(values = c("FALSE" = "white", "TRUE" = "black")) + scale_y_discrete(limits = rev) + 
+    facet_grid(rows = vars(Kidney), scales = "free", space = "free") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), plot.title = element_text(hjust = 0.5),
+          strip.text.y = element_text(angle = 0), axis.text.y = element_blank(), axis.ticks.y = element_blank(),
+          text = element_text(size = 18)) + 
+    labs(x = NULL, y = NULL, title = "Disease areas") + guides(fill = "none")
+  
+  plots = plot1 + plot2 + plot_layout(guides = "collect", widths = c(1, 1.5))
+  return(list("plots" = plots, "data4" = data4, "data5" = data5))
+}
+
+```
+
+### Combined plot
+```{r OpenTargets combined plot, fig.height=9, fig.width=12}
+# gene.list = list("CR1", "C1QA", "C1QB", "C1QC", "C1R", "C1S", "C2", "C3", "C4A", "C4B", "C5")
+gene.list = list("CCL17", "IL3RA", "LY96", "CXCR3", "PLG")
+
+OT_list = map_dfr(gene.list, function(gene){
+  data.frame("Gene" = gene, OT_query(gene)$data4)
+})
+data.OT = OT_list %>%
+  filter(Kidney %in% c("Kidney disease", "Renal measurement")) %>%
+  complete(Gene, Scores, nesting(Disease_name, Kidney))
+dis.order = data.OT %>% filter(Scores == "Overall\nassociation score" & !is.na(Score)) %>%
+                     arrange(Gene, -Score) %>% select(Disease_name) %>% unique
+data.OT = data.OT %>% mutate(Disease_name = factor(Disease_name, levels = dis.order$Disease_name))
+ggplot(data.OT, aes(x = Gene, y = Disease_name, fill = Score)) +
+  geom_tile(col = "grey90") +
+  scale_fill_viridis(na.value = "white") + scale_y_discrete(limits = rev) + scale_x_discrete(drop = FALSE) +
+  facet_grid(Kidney ~ Scores, scales = "free", space = "free") +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), strip.text.y = element_text(angle = 0))
+
+ggsave("Output/OTquery_CSLassets-Combined_TW.pdf", height = 9, width = 12)
+
+```
+
+### Single plots
+```{r OpenTargets single plots, fig.height=9, fig.width=18}
+gene.list = list("CCL17", "IL3RA", "LY96", "CXCR3", "PLG")
+
+plot.list = map(gene.list, function(gene){
+  data.OT = OT_query(gene)$data4 %>%
+    filter(Kidney %in% c("Kidney disease", "Renal measurement")) %>%# & !is.na(Score)) #& Scores == "genetic_association" & 
+    complete(Scores, nesting(Disease_name, Kidney))
+  dis.order = data.OT %>% filter(Scores == "Overall\nassociation score" & !is.na(Score)) %>%
+    arrange(Score) %>% select(Disease_name) %>% unique
+  data.OT = data.OT %>% 
+    mutate(Disease_name = factor(Disease_name, levels = dis.order$Disease_name),
+           Overall = factor(Scores == "Overall\nassociation score", levels = c(TRUE, FALSE)))
+  ggplot(data.OT, aes(x = Scores, y = Disease_name, fill = Score)) +
+    geom_tile(col = "grey90") +
+    # scale_x_discrete(drop = FALSE) +
+    facet_grid(Kidney ~ Overall, scales = "free", space = "free") +
+    labs(x = NULL, y = NULL, title = gene) +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), 
+          strip.text.y = element_text(angle = 0), plot.title = element_text(hjust = 0.5),
+          strip.background.x = element_blank(), strip.text.x = element_blank())
+})
+max.score = max(unlist(map(plot.list, function(plot) plot$data$Score)), na.rm = TRUE)
+plot.list = map(plot.list, function(plot) plot + scale_fill_viridis(na.value = "white", limits = c(0, max.score)))
+wrap_plots(plot.list, guides = "collect", heights = c(1,2))
+
+ggsave("Output/OTquery_CSLassets-Singles_TW.pdf", height = 9, width = 18)
+
+```
+
+
 ## AKI
 
 ### Fetuin-A
@@ -101,7 +274,7 @@ data2 = fread("Input/LupusNephritis/exprMatrixSleMetro.tsv.gz")
 ```
 
 ### Lupus bulk transcriptomics - longitudinal
-```{r Lupus bulk transcriptomics, fig.width=4, fig.height=3.5}
+```{r Lupus bulk transcriptomics, fig.width=7, fig.height=6}
 data3 = getGEO("GSE65391")[[1]]
 annot.pat = data3@phenoData@data %>%
   filter(`set:ch1` != "Technical_Replicate") %>%
@@ -117,10 +290,21 @@ expr2 = expr %>%
   mutate(disease_activity = factor(ifelse(disease_state == "Healthy", "Healthy", paste0("SLE_", disease_activity)),
                                    levels = c("Healthy", paste0("SLE_", 1:3))))
 
-ggplot(expr2, aes(x = disease_activity, y = NGAL, fill = disease_activity)) +
-  geom_boxplot(alpha = 0.5, outlier.alpha = 0) + geom_jitter(width = 0.2, alpha = 0.1) +
-  labs(x = NULL) +
-  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+pat.counts = expr2 %>% group_by(disease_activity) %>% 
+  dplyr::mutate(disease_activity = paste0(disease_activity, " (", n_distinct(geo_accession), ")")) %>%
+  dplyr::select(disease_activity) %>% distinct %>% unlist
+expr2 = expr2 %>% mutate(disease_activity = factor(disease_activity, labels = pat.counts))
+
+gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3", "IFIT3", "CXCL9", "CXCL10", "CXCL11")
+gene.list = list("LY96", "CXCR3", "CXCL10", "IFIT3")
+plot.list = map(gene.list, function(gene){
+  ggplot(expr2, aes(x = disease_activity, y = .data[[gene]], fill = disease_activity, col = disease_activity)) +
+    geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.15) +
+    labs(x = NULL) +
+    theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+    stat_compare_means(comparisons = list(c(1,2), c(2,3), c(3,4), c(1,3), c(1,4)), na.rm = TRUE, size = 3)
+})
+wrap_plots(plot.list, guides = "collect")
 
 ```
 

@@ -7,13 +7,13 @@ output: html_document
 
 Built with R version `r getRversion()`
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
 ```{r load packages & functions, include=FALSE}
 setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/Netosis")
 source("../SourceFile_TW.R")
-```
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
 # Netosis analyses
@@ -23,7 +23,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ### Load data
 ```{r Load data}
 exp.folder = "C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Incucyte/Netosis/Netosis_Exp10/Analyses/"
-data.img.raw = fread(paste0(exp.folder, "Netosis-10_Image.csv"))
+data.img.raw = fread(paste0(exp.folder, "Netosis-10_Small_Image.csv"))
 data.NET.raw = fread(paste0(exp.folder, "Netosis-10_NET.csv"))
 data.nuc.raw = fread(paste0(exp.folder, "Netosis-10_Nucleus.csv"))
 annot.plate = fread(paste0(exp.folder, "PlateMap_Exp10.csv"))
@@ -31,7 +31,19 @@ annot.plate = fread(paste0(exp.folder, "PlateMap_Exp10.csv"))
 
 ### Analyze timepoints at image-level
 ```{r Image analyses}
-ggplot(aes(x = Timepoint, y = ))
+data.img = data.img.raw %>%
+  `colnames<-`(str_remove(colnames(.), "Metadata_")) %>%
+  left_join(annot.plate, by = "Well") %>%
+  group_by(Timepoint, Condition, Concentration) %>%
+  # dplyr::summarise(NET_TotalIntensity = mean(Intensity_TotalIntensity_CorrGreen_NET, na.rm = TRUE)) %>%
+  dplyr::mutate(Concentration = as.factor(Concentration),
+                NET_percentage = Count_NET/Count_Nucleus) %>%
+  filter(!Timepoint %in% c("00h00m", "00h30m") & Condition == "Ionomycin (uM)")# "PMA (nM)")
+ggplotly(ggplot(data.img, aes(x = Timepoint, y = NET_percentage, col = Concentration, group = Concentration)) +
+  # stat_summary(fun.data = mean_sdl, geom = "errorbar") + #fun.args = list(mult = 1),
+  stat_summary(fun.y = mean, geom = "line") +
+  # geom_line() +
+  facet_grid(.~Condition) +
+  scale_color_viridis_d() + theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)))
 
-colnames(data.img)
 ```

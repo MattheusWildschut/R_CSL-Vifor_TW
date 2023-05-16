@@ -47,7 +47,7 @@ dev.off()
 library(httr)
 HGNC = data.table::fread("../Other/Input/HGNC_GeneNames_04-05-23.csv")
 
-gene_id = "C1R"
+gene_id = "PLG"
 OT_query = function(gene_id){
   ensembl_id = na.omit(HGNC$`Ensembl ID(supplied by Ensembl)`[HGNC$`Approved symbol` == gene_id])[1]
   query_string = "
@@ -116,7 +116,7 @@ OT_query = function(gene_id){
     group_by(Kidney) %>% slice_max(Disease_score, n = 25) %>% ungroup# %>% dplyr::select(-Kidney)
   
   diseaseTypes = c("Disease_score", "genetic_association", "somatic_mutation", "known_drug", "affected_pathway", "literature", "rna_expression", "animal_model")
-  diseaseTypeLabels = c("Overall association score", "Genetic associations", "Somatic mutations", "Drugs", "Pathways & systems biology",
+  diseaseTypeLabels = c("Overall\nassociation score", "Genetic associations", "Somatic mutations", "Drugs", "Pathways\n& systems biology",
                         "Text mining", "RNA expression", "Animal models")
   
   data4 = data3 %>%
@@ -198,16 +198,41 @@ server = function(input, output, session) {
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
 
 gene.list = list("CR1", "C1QA", "C1QB", "C1QC", "C1R", "C1S", "C2", "C3", "C4A", "C4B", "C5")
-gene.list = list("CCL17", "IL3RA", "LY96", "CXCR3")
+gene.list = list("CCL17", "IL3RA", "LY96", "CXCR3", "PLG")
 
 OT_list = map_dfr(gene.list, function(gene){
   data.frame("Gene" = gene, OT_query(gene)$data4)
 })
 data.OT = OT_list %>%
   filter(Kidney %in% c("Kidney disease", "Renal measurement")) %>%# & !is.na(Score)) #& Scores == "genetic_association" & 
-  complete(Gene, Scores, Disease_name)
+  complete(Gene, Scores, nesting(Disease_name, Kidney))
+dis.order = data.OT %>% filter(Scores == "Overall\nassociation score" & !is.na(Score)) %>%
+                     arrange(Gene, -Score) %>% select(Disease_name) %>% unique
+data.OT = data.OT %>% mutate(Disease_name = factor(Disease_name, levels = dis.order$Disease_name))
 ggplot(data.OT, aes(x = Gene, y = Disease_name, fill = Score)) +
   geom_tile(col = "grey90") +
   scale_fill_viridis(na.value = "white") + scale_y_discrete(limits = rev) + scale_x_discrete(drop = FALSE) +
-  facet_grid(.~Scores, scales = "free") +
-  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+  facet_grid(Kidney ~ Scores, scales = "free", space = "free") +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), strip.text.y = element_text(angle = 0))
+
+## Single plots ---------------------
+gene.list = list("CCL17", "IL3RA", "LY96", "CXCR3", "PLG")
+# gene.list = list("IL3RA")
+plot.list = map(gene.list, function(gene){
+  data.OT = OT_query(gene)$data4 %>%
+    filter(Kidney %in% c("Kidney disease", "Renal measurement")) %>%# & !is.na(Score)) #& Scores == "genetic_association" & 
+    complete(Scores, nesting(Disease_name, Kidney))
+  dis.order = data.OT %>% filter(Scores == "Overall\nassociation score" & !is.na(Score)) %>%
+    arrange(Score) %>% select(Disease_name) %>% unique
+  data.OT = data.OT %>% mutate(Disease_name = factor(Disease_name, levels = dis.order$Disease_name))
+  ggplot(data.OT, aes(x = Scores, y = Disease_name, fill = Score)) +
+    geom_tile(col = "grey90") +
+    scale_x_discrete(drop = FALSE) +
+    facet_grid(Kidney ~ ., scales = "free", space = "free") +
+    labs(x = NULL, y = NULL, title = gene) +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), strip.text.y = element_text(angle = 0), plot.title = element_text(hjust = 0.5))
+})
+max.score = max(unlist(map(plot.list, function(plot) plot$data$Score)), na.rm = TRUE)
+plot.list = map(plot.list, function(plot) plot + scale_fill_viridis(na.value = "white", limits = c(0, max.score)))
+wrap_plots(plot.list, guides = "collect")
