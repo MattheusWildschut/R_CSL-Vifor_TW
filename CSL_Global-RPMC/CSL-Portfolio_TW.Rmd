@@ -194,33 +194,39 @@ ggsave("Output/OTquery_CSLassets-Singles_TW.pdf", height = 9, width = 18)
 
 ## AKI
 
-### Fetuin-A
+### Urine CSA-AKI
 Fetuin-A = AHSG = P02765 = FETUA_Human = Alpha-2-HS-glycoprotein
 
 - Paper URL: https://www.frontiersin.org/articles/10.3389/fbioe.2022.1002853/full
 - Data downloaded from: https://www.frontiersin.org/articles/10.3389/fbioe.2022.1002853/full#supplementary-material
   - Table 4.xls
+- Gene names downloaded from: https://www.genenames.org/download/custom/
+  - Selected columns: all standards + "Alias names", "NCBI Gene ID", "Ensembl gene ID", "UniProt ID"
+  - Saved as .txt
 
 ```{r Fetuin-A, fig.height=4, fig.width=7}
 raw.data = fread("Input/Bai2022_UrinaryProteomics_Table 4.csv")
-data = raw.data %>% 
-  column_to_rownames("Protein") %>%
+HGNC = data.table::fread("../Other/Input/HGNC_GeneNames_17-05-23.txt", quote = "")
+
+data = raw.data %>%
   select(-ProteinGroup) %>%
+  mutate(Protein = HGNC$`Approved symbol`[match(str_extract(Protein, "(?<=sp\\|).*(?=\\|)"),
+                                                 HGNC$`UniProt ID(supplied by UniProt)`)]) %>%
+  filter(!is.na(Protein)) %>% # 16/1942 Proteins not matched, 1926 remaining
+  column_to_rownames("Protein") %>%
   t %>% as.data.frame %>%
   mutate(Patient = factor(rep(1:6, 2)),
          TimePoint = factor(rep(c("After surgery (Day 1)", "Before surgery"), each = 6),
                             levels = c("Before surgery", "After surgery (Day 1)")))
 
-colnames(data)[str_detect(colnames(data), "P02765")]
-data = data %>% mutate(norm_FetuinA = `sp|P02765|FETUA_HUMAN`-`sp|P01034|CYTC_HUMAN`)
+data = data %>% mutate(norm_FetuinA = AHSG - CST3)
 
-box.plot = ggplot(data, aes(x = TimePoint, y = `sp|P02765|FETUA_HUMAN`, fill = TimePoint)) +
+box.plot = ggplot(data, aes(x = TimePoint, y = PLAU, fill = TimePoint)) +
   geom_boxplot() +
-  stat_compare_means(comparisons = list(c(1,2)), method = "t.test", label = "p.signif", hide.ns = TRUE, paired = TRUE,
-                       vjust = 0.5, step.increase = 0.07, tip.length = 0.02) +
+  stat_compare_means(comparisons = list(c(1,2)), size = 3) +
   theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + xlab(NULL)
 
-line.plot = ggplot(data, aes(x = TimePoint, y = `sp|P02765|FETUA_HUMAN`, group = Patient, col = Patient)) +
+line.plot = ggplot(data, aes(x = TimePoint, y = PLAU, group = Patient, col = Patient)) +
   geom_line() + geom_point() +
   theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
@@ -234,8 +240,25 @@ ggsave("Output/Bai2022_UrinaryProteomics_FetuinA.pdf", height = 4, width = 7)
 - Paper: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7710145/
 - Data downloaded: Supplementary Table S1 ("162338_1_supp_596735_qgmqcy.xlsx")
 
-```{r Septic-AKI mouse}
+```{r Septic-AKI mouse, fig.width=4, fig.height=4}
+raw.data = read.xlsx("Input/AKI/162338_1_supp_596735_qgmqcy.xlsx", sheetIndex = 1, startRow = 2)
+data = raw.data %>% dplyr::select(Gene.Name, contains("LFQ")) %>%
+  column_to_rownames("Gene.Name") %>% t %>% as.data.frame %>%
+  # dplyr::mutate(across(everything(), ~log2(.x+1))) %>%
+  mutate(Animal = as.numeric(str_extract(rownames(.), "(?<=G)[:digit:]{1,2}"))) %>%
+  arrange(Animal) %>%
+  mutate(Group = rep(c("Day 0", "Day 2", "Day 7"), each = 6))
 
+gene = "Ahsg"
+ggplot(data, aes(x = Group, y = .data[[gene]], col = Group, fill = Group)) +
+  geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(width = 0.2, alpha = 0.2) +
+  stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3)), size = 4) +
+  labs(x = NULL, y = paste0(gene, "\nmRNA levels (log2)"), 
+       title = "Kidney proteomics\nSepsis-induced Kidney Injury mouse model\nLin | Mol Cell Proteomics 2020") +
+  theme_bw() + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(hjust = 0.5, size = 12))
+
+c("Ccl17", "Ly96", "Plg", "Il3ra", "Cxcr3")[c("Ccl17", "Ly96", "Plg", "Il3ra", "Cxcr3") %in% colnames(data)]
 
 ```
 
@@ -274,12 +297,15 @@ data2 = fread("Input/LupusNephritis/exprMatrixSleMetro.tsv.gz")
 ```
 
 ### Lupus bulk transcriptomics - longitudinal
-```{r Lupus bulk transcriptomics, fig.width=7, fig.height=6}
+
+- Paper: Banchereau et al., "Personalized Immunomonitoring Uncovers Molecular Networks that Stratify Lupus Patients", Cell 2016
+- Link paper: https://www.sciencedirect.com/science/article/pii/S0092867416302641
+```{r Lupus bulk transcriptomics, fig.width=4.5, fig.height=5}
 data3 = getGEO("GSE65391")[[1]]
 annot.pat = data3@phenoData@data %>%
   filter(`set:ch1` != "Technical_Replicate") %>%
-  dplyr::select(geo_accession, `subject:ch1`, `disease state:ch1`, `visit:ch1`, `disease_activity:ch1`, `sledai:ch1`, `treatment_lmm1:ch1`) %>%
-  `colnames<-`(str_replace(str_remove(colnames(.), "\\:ch1"), " ", "_"))
+  `colnames<-`(str_replace(str_remove(colnames(.), "\\:ch1"), " ", "_")) %>%
+  dplyr::select(geo_accession, subject, disease_state, visit, disease_activity, sledai, treatment_lmm1, sledaic_lmm2)
 annot.gene = data3@featureData@data
 expr = data3@assayData$exprs %>% as.data.frame %>%
   dplyr::mutate(Gene = annot.gene$ILMN_Gene[match(rownames(.), annot.gene$ID)]) %>%
@@ -290,24 +316,33 @@ expr2 = expr %>%
   mutate(disease_activity = factor(ifelse(disease_state == "Healthy", "Healthy", paste0("SLE_", disease_activity)),
                                    levels = c("Healthy", paste0("SLE_", 1:3))))
 
-pat.counts = expr2 %>% group_by(disease_activity) %>% 
-  dplyr::mutate(disease_activity = paste0(disease_activity, " (", n_distinct(geo_accession), ")")) %>%
-  dplyr::select(disease_activity) %>% distinct %>% unlist
-expr2 = expr2 %>% mutate(disease_activity = factor(disease_activity, labels = pat.counts))
+pat.1 = expr2 %>% group_by(disease_activity) %>% dplyr::count() %>%
+  mutate(Labels = paste0(disease_activity, " (", n, ")"))
+pat.2 = expr2 %>% group_by(sledaic_lmm2) %>% dplyr::count() %>%
+  mutate(Labels = paste0(sledaic_lmm2, " (", n, ")"))
+expr2 = expr2 %>% mutate(disease_activity = factor(disease_activity, 
+                                                   levels = pat.1$disease_activity, labels = pat.1$Labels),
+                         sledaic_lmm2 = factor(sledaic_lmm2,
+                                               levels = rev(pat.2$sledaic_lmm2), labels = rev(pat.2$Labels)))
 
-gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3", "IFIT3", "CXCL9", "CXCL10", "CXCL11")
-gene.list = list("LY96", "CXCR3", "CXCL10", "IFIT3")
-plot.list = map(gene.list, function(gene){
-  ggplot(expr2, aes(x = disease_activity, y = .data[[gene]], fill = disease_activity, col = disease_activity)) +
+gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3")#, "IFIT3", "CXCL9", "CXCL10", "CXCL11")
+gene.list = list("LY96")#, "CXCR3")#, "CXCL10", "IFIT3")
+gene.list = list("IL6R", "IL6", "IL5", "IL4")
+plot.list = map2(gene.list, "disease_activity", function(gene, score){
+  grouping = ifelse(score == "disease_activity", "Disease activity", "SLEDAI categories")
+  comp.list = if(score == "disease_activity") list(c(1,2), c(2,3), c(3,4), c(1,3), c(1,4)) else list(c(1,2), c(2,3), c(3,4), c(4,5), c(5,6), c(3,5), c(2,5))
+  ggplot(expr2, aes(x = .data[[score]], y = .data[[gene]], fill = .data[[score]], col = .data[[score]])) +
     geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.15) +
-    labs(x = NULL) +
-    theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
-    stat_compare_means(comparisons = list(c(1,2), c(2,3), c(3,4), c(1,3), c(1,4)), na.rm = TRUE, size = 3)
+    stat_compare_means(comparisons = comp.list, na.rm = TRUE, size = 3, step.increase = 0.075) +
+    labs(x = NULL, y = paste0(gene, "\nmRNA levels (log2)"), fill = grouping, col = grouping) +
+    theme_bw() + 
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 })
-wrap_plots(plot.list, guides = "collect")
+wrap_plots(plot.list, guides = "collect") + 
+  plot_annotation("SLE blood transcriptomics\nBanchereau Cell 2016") & theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output/SLE_BloodTranscriptomics_LY96_DA.pdf", width = 5, height = 5)
 
 ```
-
 
 ## CKD
 
@@ -317,21 +352,28 @@ wrap_plots(plot.list, guides = "collect")
 - Data downloaded from: https://clinicalproteomicsjournal.biomedcentral.com/articles/10.1186/s12014-023-09405-0
   - Additional file 2
 
-```{r CKD plasma proteomics, fig.width=3, fig.height=2.5}
+```{r CKD plasma proteomics, fig.width=4, fig.height=3}
 data = read.csv("Input/12014_2023_9405_MOESM2_ESM.csv")
 pat.counts = data %>% group_by(Progressor.type) %>% dplyr::count() %>% 
   ungroup %>% dplyr::select(n) %>% unlist
 data = data %>%
   mutate(Progressor.type = factor(Progressor.type, levels = c("Stable", "Rapid"),
                                   labels = paste0(c("Stable", "Rapid"), " (", rev(pat.counts), ")")))
+
+colnames(data)[-c(1,ncol(data))] = HGNC$`Approved symbol`[match(colnames(data)[-c(1,ncol(data))],
+                                                                HGNC$`UniProt ID(supplied by UniProt)`)]
   
-ggplot(data, aes(x = Progressor.type, y = P00747, col = Progressor.type, fill = Progressor.type)) +
+ggplot(data, aes(x = Progressor.type, y = CCT4, col = Progressor.type, fill = Progressor.type)) +
   geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(alpha = 0.2, width = 0.2) +
   stat_compare_means(comparisons = list(c(1,2))) +
   labs(x = NULL, y = "PLG - Plasmin(ogen)\nProtein levels (log2)", title = "CKD patient plasma proteomics") +
   theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(hjust = 0.5))
+ggsave("Output/CKD-plasma-proteomics_PLG.pdf", width = 4, height = 3)
+
 
 ```
+
+## Other
 
 ### IL-6
 ```{r IL-6}
