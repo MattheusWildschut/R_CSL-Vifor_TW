@@ -309,6 +309,30 @@ wrap_plots(plot.list, guides = "collect")
 ```
 
 
+## CKD
+
+### CKD plasma proteomics
+
+- Paper: Medina et al., Proteomic signature associated with chronic kidney disease (CKD) progression identified by data-independent acquisition mass spectrometry, Clinical Proteomics 2023
+- Data downloaded from: https://clinicalproteomicsjournal.biomedcentral.com/articles/10.1186/s12014-023-09405-0
+  - Additional file 2
+
+```{r CKD plasma proteomics, fig.width=3, fig.height=2.5}
+data = read.csv("Input/12014_2023_9405_MOESM2_ESM.csv")
+pat.counts = data %>% group_by(Progressor.type) %>% dplyr::count() %>% 
+  ungroup %>% dplyr::select(n) %>% unlist
+data = data %>%
+  mutate(Progressor.type = factor(Progressor.type, levels = c("Stable", "Rapid"),
+                                  labels = paste0(c("Stable", "Rapid"), " (", rev(pat.counts), ")")))
+  
+ggplot(data, aes(x = Progressor.type, y = P00747, col = Progressor.type, fill = Progressor.type)) +
+  geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(alpha = 0.2, width = 0.2) +
+  stat_compare_means(comparisons = list(c(1,2))) +
+  labs(x = NULL, y = "PLG - Plasmin(ogen)\nProtein levels (log2)", title = "CKD patient plasma proteomics") +
+  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(hjust = 0.5))
+
+```
+
 ### IL-6
 ```{r IL-6}
 
