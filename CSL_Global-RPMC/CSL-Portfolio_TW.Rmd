@@ -10,6 +10,7 @@ Built with R version `r getRversion()`
 ```{r load packages & functions, include=FALSE}
 setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/CSL_Global-RPMC")
 source("../SourceFile_TW.R")
+HGNC = data.table::fread("../Other/Input/HGNC_GeneNames_17-05-23.txt", quote = "")
 
 ```
 
@@ -296,16 +297,21 @@ data2 = fread("Input/LupusNephritis/exprMatrixSleMetro.tsv.gz")
 
 <!-- ``` -->
 
-### Lupus bulk transcriptomics - longitudinal
+### Bancheraeu - longitudinal SLE
 
 - Paper: Banchereau et al., "Personalized Immunomonitoring Uncovers Molecular Networks that Stratify Lupus Patients", Cell 2016
 - Link paper: https://www.sciencedirect.com/science/article/pii/S0092867416302641
-```{r Lupus bulk transcriptomics, fig.width=4.5, fig.height=5}
+```{r Lupus bulk transcriptomics, fig.width=4.25, fig.height=3.5}
 data3 = getGEO("GSE65391")[[1]]
 annot.pat = data3@phenoData@data %>%
   filter(`set:ch1` != "Technical_Replicate") %>%
   `colnames<-`(str_replace(str_remove(colnames(.), "\\:ch1"), " ", "_")) %>%
-  dplyr::select(geo_accession, subject, disease_state, visit, disease_activity, sledai, treatment_lmm1, sledaic_lmm2)
+  dplyr::select(geo_accession, subject, disease_state, visit, disease_activity, sledai, treatment_lmm1, sledaic_lmm2) %>%
+  mutate(sledai_grouped = factor(sledaic_lmm2, levels = sort(unique(sledaic_lmm2)), 
+                                 labels = rep(c("Renal", "No renal", "Healthy"), c(2,3,1)))) %>%
+  mutate(sledai_grouped = factor(sledai_grouped, levels = c("Healthy", "No renal", "Renal"),
+                                 labels = c("Healthy (48)", "SLE | No renal (516)", "SLE | Renal (408)")))
+
 annot.gene = data3@featureData@data
 expr = data3@assayData$exprs %>% as.data.frame %>%
   dplyr::mutate(Gene = annot.gene$ILMN_Gene[match(rownames(.), annot.gene$ID)]) %>%
@@ -327,24 +333,26 @@ expr2 = expr2 %>% mutate(disease_activity = factor(disease_activity,
 
 gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3")#, "IFIT3", "CXCL9", "CXCL10", "CXCL11")
 gene.list = list("LY96")#, "CXCR3")#, "CXCL10", "IFIT3")
-gene.list = list("IL6R", "IL6", "IL5", "IL4")
-plot.list = map2(gene.list, "disease_activity", function(gene, score){
+# gene.list = list("IL6R", "IL6", "IL5", "IL4")
+var = "sledai_grouped"# "disease_activity" # #"sledaic_lmm2" # 
+plot.list = map2(gene.list[gene.list %in% colnames(expr2)], var, function(gene, score){
   grouping = ifelse(score == "disease_activity", "Disease activity", "SLEDAI categories")
-  comp.list = if(score == "disease_activity") list(c(1,2), c(2,3), c(3,4), c(1,3), c(1,4)) else list(c(1,2), c(2,3), c(3,4), c(4,5), c(5,6), c(3,5), c(2,5))
+  comp.list = if(score == "disease_activity") list(c(1,2), c(2,3), c(3,4), c(1,3), c(1,4)) else list(c(1,2), c(1,3), c(2,3))#list(c(1,2), c(2,3), c(3,4), c(4,5), c(5,6), c(3,5), c(2,5))
   ggplot(expr2, aes(x = .data[[score]], y = .data[[gene]], fill = .data[[score]], col = .data[[score]])) +
-    geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.25) +
+    geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.15) +
     stat_compare_means(comparisons = comp.list, na.rm = TRUE, size = 3, step.increase = 0.075) +
     labs(x = NULL, y = paste0(gene, "\nmRNA levels (log2)"), fill = grouping, col = grouping) +
     theme_bw() + 
     theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 })
 wrap_plots(plot.list, guides = "collect") + 
-  plot_annotation("SLE blood transcriptomics\nBanchereau Cell 2016") & theme(plot.title = element_text(hjust = 0.5))
-ggsave("Output/SLE_BloodTranscriptomics_LY96_DA.pdf", width = 5, height = 5)
+  plot_annotation("SLE longitudinal whole blood transcriptomics\nBanchereau Cell 2016") & theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output/SLE_BloodTranscriptomics_LY96_DA.pdf", width = 4.25, height = 3.5)
+# ggsave("Output/SLE_BloodTranscriptomics_CSL-assets_DA.pdf", width = 10, height = 7)
 
 ```
 
-### NephroSeq Berthier Lupus Glom & TubInt
+### Berthier Lupus Glom & TubInt
 
 - Paper: Berthier et al. (Kretzler group), "Cross-Species Transcriptional Network Analysis Defines Shared Inflammatory Responses in Murine and Human Lupus Nephritis", The Journal of Immunology 2012
 - Link: https://journals.aai.org/jimmunol/article/189/2/988/86778/Cross-Species-Transcriptional-Network-Analysis
@@ -422,7 +430,7 @@ plot.list = map(gene.list[gene.list %in% colnames(expr)], function(gene){
 wrap_plots(plot.list, guides = "collect") + 
   plot_annotation("LN transcriptomics\nMejia-Vilet NDT 2019") & theme(plot.title = element_text(hjust = 0.5))
 # ggsave("Output/LN_GlomTubInt-Transcriptomics_All.pdf", width = 7.7, height = 5.25)
-ggsave("Output/LN_GlomTubInt-Transcriptomics_LY96.pdf", width = 5, height = 3.25)
+# ggsave("Output/LN_GlomTubInt-Transcriptomics_LY96.pdf", width = 5, height = 3.25)
 
 ```
 
@@ -430,14 +438,16 @@ ggsave("Output/LN_GlomTubInt-Transcriptomics_LY96.pdf", width = 5, height = 3.25
 
 - Link https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0196117
 
-```{r LN Wither, fig.width=7, fig.height=5}
+```{r LN Wither, fig.width=4, fig.height=3.25}
 data = getGEO("GSE99967")[[1]]
 annot.pat = data@phenoData@data %>%
   `colnames<-`(str_replace(str_remove(colnames(.), ":ch1"), " ", "_")) %>%
   mutate(Disease = replace_na(nephritis_state, "Control")) %>%
   select(geo_accession, Disease)
 pat.counts = annot.pat %>% group_by(Disease) %>% dplyr::count() %>% ungroup %>%
-  mutate(Labels = paste0(Disease, " (", n, ")"))
+  mutate(Labels = factor(paste0(str_remove(capitalize(Disease), " \\(.*\\)"), " (", n, ")"),
+                         levels = c("Control (17)", "Without LN (13)", "Active LN (29)"),
+                         labels = c("Control (17)", "SLE | Without LN (13)", "SLE | Active LN (29)")))
 annot.pat = annot.pat %>% left_join(pat.counts, by = "Disease")
 annot.gene = data@featureData@data
 expr = data@assayData$exprs %>% as.data.frame %>%
@@ -449,21 +459,21 @@ expr = data@assayData$exprs %>% as.data.frame %>%
 
 gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3")
 gene.list = list("LY96")
-var = "Disease"
+var = "Labels"
 plot.list = map2(gene.list[gene.list %in% colnames(expr)], var, function(gene, var){
   ggplot(expr, aes(x = .data[[var]], y = .data[[gene]], fill = .data[[var]], col = .data[[var]])) +
     geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.25) +
     # facet_wrap(.~Tissue) +
-    stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3)), na.rm = TRUE, size = 3) +
+    stat_compare_means(comparisons = list(c(1,2), c(2,3), c(1,3)), na.rm = TRUE, size = 3) +
     labs(x = NULL, y = paste0(gene, "\nmRNA levels (log2)"), fill = "Disease status", col = "Disease status") +
     scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
     theme_bw() + 
     theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 })
 wrap_plots(plot.list, guides = "collect") + 
-  plot_annotation("LN transcriptomics\nWither PlosOne 2018") & theme(plot.title = element_text(hjust = 0.5))
+  plot_annotation("SLE Whole Blood transcriptomics\nWither PlosOne 2018") & theme(plot.title = element_text(hjust = 0.5))
 # ggsave("Output/LN_GlomTubInt-Transcriptomics_All.pdf", width = 7.7, height = 5.25)
-# ggsave("Output/LN_GlomTubInt-Transcriptomics_LY96.pdf", width = 5, height = 3.25)
+ggsave("Output/SLE-LN-Wither-Transcriptomics_LY96.pdf", width = 4.25, height = 3.5)
 
 ```
 
@@ -492,7 +502,6 @@ ggplot(data, aes(x = Progressor.type, y = PLG, col = Progressor.type, fill = Pro
   labs(x = NULL, y = "PLG - Plasmin(ogen)\nProtein levels (log2)", title = "CKD patient plasma proteomics") +
   theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(hjust = 0.5))
 ggsave("Output/CKD-plasma-proteomics_PLG.pdf", width = 4, height = 3)
-
 
 ```
 
@@ -581,7 +590,7 @@ wrap_plots(plot.list, guides = "collect") +
 ```
 
 
-## Nephrotic Syndrome
+## FSGS (Nephrotic Syndrome)
 
 ### Mariani Nephrotic Syndrome TI
 
@@ -637,7 +646,7 @@ wrap_plots(plot.list, guides = "collect") +
 - Paper: Sealfon et al. (Kretzler/Trayanakaya/Beck group), "Molecular Characterization of Membranous Nephropathy", JASN 2022
 - Link: https://journals.lww.com/jasn/Abstract/2022/06000/Molecular_Characterization_of_Membranous.18.aspx
 - Data downloaded from: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE197307
-```{r NEPTUNE Glom, fig.width=9.5, fig.height=5}
+```{r NEPTUNE Glom, fig.width=10, fig.height=4.5}
 raw.data = fread("Input/GSE197307_NEPTUNE_Glom_RNA_counts_2022.txt.gz")
 data = getGEO("GSE197307")[[1]]
 annot.pat = data@phenoData@data %>%
@@ -669,18 +678,19 @@ gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3")
 var = "Labels"
 plot.list = map2(gene.list[gene.list %in% colnames(expr)], var, function(gene, var){
   ggplot(expr, aes(x = .data[[var]], y = .data[[gene]], fill = .data[[var]], col = .data[[var]])) +
+    geom_hline(yintercept = median(expr[[gene]][expr$Disease == "Healthy living transplant donor"]), linetype = 2) +
     geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.25) +
     # facet_wrap(.~Tissue) +
-    stat_compare_means(comparisons = list(c(1,2), c(1,3), c(1,4), c(1,5), c(2,3), c(2,4), c(2,5)),
-                       na.rm = TRUE, size = 3, label = "p.signif", vjust = 0.45, hide.ns = TRUE) +
+    # stat_compare_means(comparisons = list(c(1,2), c(1,3), c(1,4), c(1,5), c(2,3), c(2,4), c(2,5)),
+                       # na.rm = TRUE, size = 3, label = "p.signif", vjust = 0.45, hide.ns = TRUE) +
     labs(x = NULL, y = paste0(gene, "\nmRNA levels (log2)"), fill = "Disease status", col = "Disease status") +
     scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
     theme_bw() + 
     theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 })
 wrap_plots(plot.list, guides = "collect") + 
-  plot_annotation("Neptune Glomerular RNAseq\nSealfon JASN 2022") & theme(plot.title = element_text(hjust = 0.5))
-# ggsave("Output/IgAN_CoxBlood2_All.pdf", width = 6, height = 4.5)
+  plot_annotation("Neptune Cohort\nGlomerular transcriptomics (RNAseq)") & theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output/Neptune-Glomerular_All.pdf", width = 10, height = 4.5)
 
 ```
 
@@ -688,7 +698,7 @@ wrap_plots(plot.list, guides = "collect") +
 - Paper: 
 - Link: 
 - Data downloaded from: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE182380
-```{r Neptune TI, fig.width=9.5, fig.height=5}
+```{r Neptune TI, fig.width=10, fig.height=4.5}
 raw.data = fread("Input/GSE182380_NEPTUNE_TI_adult_RNA_counts_2021.txt.gz")
 data = getGEO("GSE182380")[[1]]
 annot.pat = data@phenoData@data %>%
@@ -717,10 +727,11 @@ gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3")
 var = "Labels"
 plot.list = map2(gene.list[gene.list %in% colnames(expr)], var, function(gene, var){
   ggplot(expr, aes(x = .data[[var]], y = .data[[gene]], fill = .data[[var]], col = .data[[var]])) +
+    geom_hline(yintercept = median(expr[[gene]][expr$Disease == "Minimal Change Disease"]), linetype = 2) +
     geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.25) +
     # facet_wrap(.~Tissue) +
-    stat_compare_means(comparisons = list(c(2,3), c(2,4), c(2,5)),
-                       na.rm = TRUE, size = 3, label = "p.signif", vjust = 0.45, hide.ns = TRUE) +
+    # stat_compare_means(comparisons = list(c(2,3), c(2,4), c(2,5)),
+                       # na.rm = TRUE, size = 3, label = "p.signif", vjust = 0.45, hide.ns = TRUE) +
     labs(x = NULL, y = paste0(gene, "\nmRNA levels (log2)"), fill = "Disease status", col = "Disease status") +
     scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
     scale_x_discrete(drop = FALSE) + scale_fill_discrete(drop = FALSE) + scale_color_discrete(drop = FALSE) +
@@ -728,14 +739,108 @@ plot.list = map2(gene.list[gene.list %in% colnames(expr)], var, function(gene, v
     theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 })
 wrap_plots(plot.list, guides = "collect") + 
-  plot_annotation("Neptune Tubulointerstitial RNAseq") & theme(plot.title = element_text(hjust = 0.5))
-# ggsave("Output/IgAN_CoxBlood2_All.pdf", width = 6, height = 4.5)
+  plot_annotation("Neptune Cohort\nTubulointerstitial transcriptomics (RNAseq)") & theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output/Neptune-Tubulointerstitial_All.pdf", width = 10, height = 4.5)
+
+```
+
+### ERCB Glomerular
+- Data from: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE104948
+
+```{r ERCB Glomerular, fig.width=7.5, fig.height=3.75}
+data = getGEO("GSE104948")
+annot.pat = rbind.data.frame(data[[1]]@phenoData@data, data[[2]]@phenoData@data) %>%
+  `colnames<-`(str_replace(str_remove(colnames(.), ":ch1"), " ", "_")) %>%
+  mutate(Sample = str_remove(title, ".*-"),
+         Disease = replace_na(str_replace(diagnosis, "Membrande", "Membrane"), "Control")) %>%
+  select(geo_accession, Disease, Sample)
+
+disease.order = c("Control", "Tumor Nephrectomy", "Minimal Change Disease", "Focal Segmental Glomerular Sclerosis/Minimal Change Disease", "Focal Segmental Glomerular Sclerosis", "Thin Membrane Disease", "Membranous Glomerulonephropathy", "IgA Nephropathy", "Diabetic Nephropathy", "Hypertensive Nephropathy", "ANCA Associated Vasculitis", "Systemic Lupus Erythematosus")
+pat.counts = annot.pat %>% group_by(Disease) %>% dplyr::count() %>% ungroup %>%
+  mutate(Disease = factor(Disease, levels = disease.order)) %>%
+  arrange(Disease) %>%
+  mutate(Labels = factor(Disease, labels = paste0(Disease, " (", n, ")")))
+annot.pat = annot.pat %>% left_join(pat.counts, by = "Disease")
+
+annot.gene = data[[1]]@featureData@data
+expr = cbind.data.frame(data[[1]]@assayData$exprs, data[[2]]@assayData$exprs) %>%
+  mutate(Gene = annot.gene$ENTREZ_GENE_ID[match(rownames(.), annot.gene$ID)]) %>%
+  mutate(Gene = HGNC$`Approved symbol`[match(Gene, HGNC$`NCBI Gene ID`)]) %>%
+  filter(!is.na(Gene)) %>%
+  # group_by(Gene) %>% dplyr::summarise(across(everything(), max)) %>%
+  remove_rownames %>% column_to_rownames("Gene") %>% t %>% as.data.frame %>%
+  rownames_to_column("geo_accession") %>% left_join(annot.pat, by = "geo_accession")
+
+gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3")
+gene.list = list("LY96")
+var = "Labels"
+plot.list = map2(gene.list[gene.list %in% colnames(expr)], var, function(gene, var){
+  ggplot(expr, aes(x = .data[[var]], y = .data[[gene]], fill = .data[[var]], col = .data[[var]])) +
+    geom_hline(yintercept = median(expr[[gene]][expr$Disease == "Control"]), linetype = 2) +
+    geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.25) +
+    # facet_wrap(.~Tissue) +
+    # stat_compare_means(comparisons = list(c(1,2), c(3,4)), na.rm = TRUE, size = 3) +
+    labs(x = NULL, y = paste0(gene, "\nmRNA levels (log2)"), fill = "Disease status", col = "Disease status") +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+    theme_bw() + 
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+})
+wrap_plots(plot.list, guides = "collect") + 
+  plot_annotation("European Renal cDNA Bank\nGlomerular transcriptomics (array profiling)") & theme(plot.title = element_text(hjust = 0.5))
+# ggsave("Output/ERCB-Glomerular_All.pdf", width = 12.5, height = 5)
+ggsave("Output/ERCB-Glomerular_LY96.pdf", width = 7.5, height = 3.75)
+
+```
+
+### ERCB Tubulointerstitial
+- Data from: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE104954
+
+```{r ERCB TI, fig.width=7.5, fig.height=3.75}
+data = getGEO("GSE104954")
+annot.pat = rbind.data.frame(data[[1]]@phenoData@data, data[[2]]@phenoData@data) %>%
+  `colnames<-`(str_replace(str_remove(colnames(.), ":ch1"), " ", "_")) %>%
+  mutate(Sample = str_remove(title, ".*-"),
+         Disease = replace_na(str_replace(diagnosis, "membrande", "membrane"), "Control")) %>%
+  select(geo_accession, Disease, Sample)
+
+disease.order = c("Control", "Tumor nephrectomy", "Minimal change disease", "Focal segmental glomerulosclerosis and minimal change disease", "Focal segmental glomerulosclerosis", "Thin membrane disease", "Membranous glomerulonephropathy", "IgA nephropathy", "Diabetic nephropathy", "Hypertensive nephropathy", "ANCA-associated vasculitis", "Systemic lupus erythematosus")
+pat.counts = annot.pat %>% group_by(Disease) %>% dplyr::count() %>% ungroup %>%
+  mutate(Disease = factor(Disease, levels = disease.order)) %>%
+  arrange(Disease) %>%
+  mutate(Labels = factor(Disease, labels = paste0(Disease, " (", n, ")")))
+annot.pat = annot.pat %>% left_join(pat.counts, by = "Disease")
+
+annot.gene = data[[1]]@featureData@data
+expr = cbind.data.frame(data[[1]]@assayData$exprs, data[[2]]@assayData$exprs) %>%
+  mutate(Gene = annot.gene$ENTREZ_GENE_ID[match(rownames(.), annot.gene$ID)]) %>%
+  mutate(Gene = HGNC$`Approved symbol`[match(Gene, HGNC$`NCBI Gene ID`)]) %>%
+  filter(!is.na(Gene)) %>%
+  # group_by(Gene) %>% dplyr::summarise(across(everything(), max)) %>%
+  remove_rownames %>% column_to_rownames("Gene") %>% t %>% as.data.frame %>%
+  rownames_to_column("geo_accession") %>% left_join(annot.pat, by = "geo_accession")
+
+gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3")
+gene.list = list("LY96")
+var = "Labels"
+plot.list = map2(gene.list[gene.list %in% colnames(expr)], var, function(gene, var){
+  ggplot(expr, aes(x = .data[[var]], y = .data[[gene]], fill = .data[[var]], col = .data[[var]])) +
+    geom_hline(yintercept = median(expr[[gene]][expr$Disease == "Control"]), linetype = 2) +
+    geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.25) +
+    # facet_wrap(.~Tissue) +
+    # stat_compare_means(comparisons = list(c(1,2), c(3,4)), na.rm = TRUE, size = 3) +
+    labs(x = NULL, y = paste0(gene, "\nmRNA levels (log2)"), fill = "Disease status", col = "Disease status") +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+    theme_bw() + 
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+})
+wrap_plots(plot.list, guides = "collect") + 
+  plot_annotation("European Renal cDNA Bank\nTubulointerstitial transcriptomics (array profiling)") & theme(plot.title = element_text(hjust = 0.5))
+# ggsave("Output/ERCB-Tubulointerstitial_All.pdf", width = 12.5, height = 5)
+ggsave("Output/ERCB-Tubulointerstitial_LY96.pdf", width = 7.5, height = 3.75)
 
 ```
 
 ## Other
-
-### ERCB subjects across kidney diseases
 
 
 ### IL-6
