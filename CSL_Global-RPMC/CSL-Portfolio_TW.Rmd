@@ -95,7 +95,7 @@ OT_query = function(gene_id){
     group_by(Kidney) %>% slice_max(Disease_score, n = 25) %>% ungroup
   
   diseaseTypes = c("Disease_score", "genetic_association", "somatic_mutation", "known_drug", "affected_pathway", "literature", "rna_expression", "animal_model")
-  diseaseTypeLabels = c("Overall\nassociation score", "Genetic associations", "Somatic mutations", "Drugs", "Pathways\n& systems biology",
+  diseaseTypeLabels = c("Overall\nassociation score", "Genetic associations", "Somatic mutations", "Drugs", "Pathways & systems biology",
                         "Text mining", "RNA expression", "Animal models")
   
   data4 = data3 %>%
@@ -147,15 +147,19 @@ OT_list = map_dfr(gene.list, function(gene){
 })
 data.OT = OT_list %>%
   filter(Kidney %in% c("Kidney disease", "Renal measurement")) %>%
+  mutate(Scores = factor(Scores, levels = levels(Scores), 
+                         labels = str_replace(str_replace_all(levels(Scores), " ", "\n"), "&\n", "& "))) %>%
   complete(Gene, Scores, nesting(Disease_name, Kidney))
-dis.order = data.OT %>% filter(Scores == "Overall\nassociation score" & !is.na(Score)) %>%
+dis.order = data.OT %>% filter(Scores == "Overall\nassociation\nscore" & !is.na(Score)) %>%
                      arrange(Gene, -Score) %>% select(Disease_name) %>% unique
 data.OT = data.OT %>% mutate(Disease_name = factor(Disease_name, levels = dis.order$Disease_name))
 ggplot(data.OT, aes(x = Gene, y = Disease_name, fill = Score)) +
   geom_tile(col = "grey90") +
   scale_fill_viridis(na.value = "white") + scale_y_discrete(limits = rev) + scale_x_discrete(drop = FALSE) +
   facet_grid(Kidney ~ Scores, scales = "free", space = "free") +
-  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), strip.text.y = element_text(angle = 0))
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), 
+        strip.text.y = element_text(angle = 0), strip.text.x = element_text(size = 8))
 
 ggsave("Output/OTquery_CSLassets-Combined_TW.pdf", height = 9, width = 12)
 
@@ -167,7 +171,7 @@ gene.list = list("CCL17", "IL3RA", "LY96", "CXCR3", "PLG")
 
 plot.list = map(gene.list, function(gene){
   data.OT = OT_query(gene)$data4 %>%
-    filter(Kidney %in% c("Kidney disease", "Renal measurement")) %>%# & !is.na(Score)) #& Scores == "genetic_association" & 
+    filter(Kidney %in% c("Kidney disease", "Renal measurement")) %>%
     complete(Scores, nesting(Disease_name, Kidney))
   dis.order = data.OT %>% filter(Scores == "Overall\nassociation score" & !is.na(Score)) %>%
     arrange(Score) %>% select(Disease_name) %>% unique
@@ -222,17 +226,23 @@ data = raw.data %>%
 
 data = data %>% mutate(norm_FetuinA = AHSG - CST3)
 
-box.plot = ggplot(data, aes(x = TimePoint, y = PLAU, fill = TimePoint)) +
-  geom_boxplot() +
-  stat_compare_means(comparisons = list(c(1,2)), size = 3) +
-  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + xlab(NULL)
+gene.list = list("CCL17", "IL3RA", "LY96", "CXCR3", "PLG")
+plot.list = map(gene.list[gene.list %in% colnames(data)], function(gene){
+  box.plot = ggplot(data, aes(x = TimePoint, y = .data[[gene]], fill = TimePoint, col = TimePoint)) +
+    geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(alpha = 0.25, width = 0.2) +
+    stat_compare_means(comparisons = list(c(1,2)), size = 3) +
+    theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + xlab(NULL)
+  
+  line.plot = ggplot(data, aes(x = TimePoint, y = .data[[gene]], group = Patient, col = Patient)) +
+    geom_line() + geom_point() +
+    theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+  
+  box.plot #+ line.plot
+})
+wrap_plots(plot.list, guides = "collect") + 
+  plot_annotation("CSA-AKI mouse model urinary proteomics\nBai Front. Bioeng. Biotechnol. 2022") & theme(plot.title = element_text(hjust = 0.5))
 
-line.plot = ggplot(data, aes(x = TimePoint, y = PLAU, group = Patient, col = Patient)) +
-  geom_line() + geom_point() +
-  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-
-box.plot + line.plot
-ggsave("Output/Bai2022_UrinaryProteomics_FetuinA.pdf", height = 4, width = 7)
+# ggsave("Output/Bai2022_UrinaryProteomics_FetuinA.pdf", height = 4, width = 7)
 
 ```
 
@@ -250,7 +260,7 @@ data = raw.data %>% dplyr::select(Gene.Name, contains("LFQ")) %>%
   arrange(Animal) %>%
   mutate(Group = rep(c("Day 0", "Day 2", "Day 7"), each = 6))
 
-gene = "Ahsg"
+gene = "Il6r"
 ggplot(data, aes(x = Group, y = .data[[gene]], col = Group, fill = Group)) +
   geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(width = 0.2, alpha = 0.2) +
   stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3)), size = 4) +
@@ -258,6 +268,8 @@ ggplot(data, aes(x = Group, y = .data[[gene]], col = Group, fill = Group)) +
        title = "Kidney proteomics\nSepsis-induced Kidney Injury mouse model\nLin | Mol Cell Proteomics 2020") +
   theme_bw() + 
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(hjust = 0.5, size = 12))
+
+sort(colnames(data)[str_detect(colnames(data), "Il|il")])
 
 c("Ccl17", "Ly96", "Plg", "Il3ra", "Cxcr3")[c("Ccl17", "Ly96", "Plg", "Il3ra", "Cxcr3") %in% colnames(data)]
 
@@ -438,7 +450,7 @@ wrap_plots(plot.list, guides = "collect") +
 
 - Link https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0196117
 
-```{r LN Wither, fig.width=4, fig.height=3.25}
+```{r LN Wither, fig.width=4.25, fig.height=3.25}
 data = getGEO("GSE99967")[[1]]
 annot.pat = data@phenoData@data %>%
   `colnames<-`(str_replace(str_remove(colnames(.), ":ch1"), " ", "_")) %>%
@@ -476,6 +488,45 @@ wrap_plots(plot.list, guides = "collect") +
 ggsave("Output/SLE-LN-Wither-Transcriptomics_LY96.pdf", width = 4.25, height = 3.5)
 
 ```
+### Chiche blood longitudinal SLE
+
+```{r Chiche blood longitudinal SLE, fig.width=4.25, fig.height=3.25}
+data = getGEO("GSE49454")[[1]]
+annot.pat = data@phenoData@data %>%
+  `colnames<-`(str_replace(str_remove(colnames(.), ":ch1"), " ", "_")) %>%
+  mutate(Disease = replace_na(renal, "Control")) %>%
+  select(geo_accession, Disease)
+pat.counts = annot.pat %>% group_by(Disease) %>% dplyr::count() %>% ungroup %>%
+  mutate(Labels = factor(paste0(str_remove(capitalize(Disease), " \\(.*\\)"), " (", n, ")"),
+                         levels = c("Control (20)", "N (93)", "Y (64)"),
+                         labels = c("Control (20)", "SLE | Without LN (93)", "SLE | Active LN (64)")))
+annot.pat = annot.pat %>% left_join(pat.counts, by = "Disease")
+annot.gene = data@featureData@data
+expr = data@assayData$exprs %>% as.data.frame %>%
+  mutate(Gene = annot.gene$Symbol[match(rownames(.), annot.gene$ID)]) %>%
+  filter(!is.na(Gene)) %>%
+  group_by(Gene) %>% dplyr::summarise(across(everything(), max)) %>%
+  column_to_rownames("Gene") %>% t %>% as.data.frame %>%
+  rownames_to_column("geo_accession") %>% left_join(annot.pat, by = "geo_accession")
+
+gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3")
+gene.list = list("LY96")
+var = "Labels"
+plot.list = map2(gene.list[gene.list %in% colnames(expr)], var, function(gene, var){
+  ggplot(expr, aes(x = .data[[var]], y = .data[[gene]], fill = .data[[var]], col = .data[[var]])) +
+    geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.25) +
+    # facet_wrap(.~Tissue) +
+    stat_compare_means(comparisons = list(c(1,2), c(2,3), c(1,3)), na.rm = TRUE, size = 3) +
+    labs(x = NULL, y = paste0(gene, "\nmRNA levels (log2)"), fill = "Disease status", col = "Disease status") +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+    theme_bw() + 
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+})
+wrap_plots(plot.list, guides = "collect") + 
+  plot_annotation("SLE Whole Blood transcriptomics\nChiche Arthritis Rhematol. 2014") & theme(plot.title = element_text(hjust = 0.5))
+# ggsave("Output/LN_GlomTubInt-Transcriptomics_All.pdf", width = 7.7, height = 5.25)
+ggsave("Output/SLE-LN-Cliche-Transcriptomics_LY96.pdf", width = 4.25, height = 3.5)
+```
 
 ## CKD
 
@@ -485,7 +536,7 @@ ggsave("Output/SLE-LN-Wither-Transcriptomics_LY96.pdf", width = 4.25, height = 3
 - Data downloaded from: https://clinicalproteomicsjournal.biomedcentral.com/articles/10.1186/s12014-023-09405-0
   - Additional file 2
 
-```{r CKD plasma proteomics, fig.width=4, fig.height=3}
+```{r CKD plasma proteomics, fig.width=3.75, fig.height=3.25}
 data = read.csv("Input/12014_2023_9405_MOESM2_ESM.csv")
 pat.counts = data %>% group_by(Progressor.type) %>% dplyr::count() %>% 
   ungroup %>% dplyr::select(n) %>% unlist
@@ -498,16 +549,16 @@ colnames(data)[-c(1,ncol(data))] = HGNC$`Approved symbol`[match(colnames(data)[-
   
 ggplot(data, aes(x = Progressor.type, y = PLG, col = Progressor.type, fill = Progressor.type)) +
   geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(alpha = 0.2, width = 0.2) +
-  stat_compare_means(comparisons = list(c(1,2))) +
-  labs(x = NULL, y = "PLG - Plasmin(ogen)\nProtein levels (log2)", title = "CKD patient plasma proteomics") +
+  stat_compare_means(comparisons = list(c(1,2)), size = 3) +
+  labs(x = NULL, y = "PLG - Plasmin(ogen)\nProtein levels (log2)", title = "CKD patient plasma proteomics\nMedina | Clinical Proteomics 2023") +
   theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(hjust = 0.5))
-ggsave("Output/CKD-plasma-proteomics_PLG.pdf", width = 4, height = 3)
+ggsave("Output/CKD-plasma-proteomics_PLG.pdf", width = 3.75, height = 3.25)
 
 ```
 
 ## IgAN
 
-### NephroSeq Cox IgAN Blood 2
+### Cox IgAN Blood 2
 
 - Paper: Cox et al., "Altered modulation of WNT-beta-catenin and PI3K/Akt pathways in IgA nephropathy", Kidney Int. 2010
 - Link: https://www.sciencedirect.com/science/article/pii/S0085253815545456
@@ -529,7 +580,7 @@ expr = data@assayData$exprs %>% as.data.frame %>%
   rownames_to_column("geo_accession") %>% left_join(annot.pat, by = "geo_accession")
 
 gene.list = list("CCL17", "IL3RA", "PLG", "LY96", "CXCR3")
-gene.list = list("IL6", "IL6R")
+# gene.list = list("IL6", "IL6R")
 # gene.list = list("MVD", "HSP90AB1", "JAK2")
 var = "Disease"
 plot.list = map2(gene.list[gene.list %in% colnames(expr)], var, function(gene, var){
@@ -744,6 +795,10 @@ ggsave("Output/Neptune-Tubulointerstitial_All.pdf", width = 10, height = 4.5)
 
 ```
 
+### Neptune TI Array
+- Data from: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE108113
+- Alternative: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE133288
+
 ### ERCB Glomerular
 - Data from: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE104948
 
@@ -840,10 +895,59 @@ ggsave("Output/ERCB-Tubulointerstitial_LY96.pdf", width = 7.5, height = 3.75)
 
 ```
 
-## Other
+## Transplant
 
+### Transplants Flechner
 
-### IL-6
-```{r IL-6}
+```{r Flechner transplant kidney&PBL, fig.width=9.5, fig.height=5.5}
+data = getGEO("GSE1563")[[1]]
+annot.pat = data@phenoData@data %>%
+  `colnames<-`(str_replace(str_remove(colnames(.), ":ch1"), " ", "_")) %>%
+  mutate(Tissue = factor(source_name_ch1, levels = c("kidney", "PBL"), labels = c("Kidney tissue", "Peripheral blood lymphocytes")),
+         Condition = str_extract(description, 
+                                 "healthy|acute rejection|well-functioning|renal dysfunction")) %>%
+  mutate(Condition = factor(Condition, levels = c("healthy", "well-functioning", "renal dysfunction", "acute rejection"),
+                            labels = c("Control | Healthy", "Transplant | Well-functioning", "Transplant | Renal dysfunction", "Transplant | Acute rejection"))) %>%
+  select(geo_accession, Tissue, Condition) %>%
+  arrange(Tissue, Condition)
+pat.counts = annot.pat %>% group_by(Tissue, Condition) %>% dplyr::count() %>% ungroup %>%
+  mutate(Labels = paste0(Condition, " (", n, ")")) %>%
+  mutate(Labels = factor(Labels, levels = Labels))
+annot.pat = annot.pat %>% left_join(pat.counts, by = c("Condition", "Tissue"))
+annot.gene = data@featureData@data
+expr = data@assayData$exprs %>% as.data.frame %>%
+  mutate(Gene = annot.gene$`Gene Symbol`[match(rownames(.), annot.gene$ID)]) %>%
+  filter(!is.na(Gene)) %>%
+  group_by(Gene) %>% dplyr::summarise(across(everything(), max)) %>%
+  column_to_rownames("Gene") %>% t %>% as.data.frame %>%
+  rownames_to_column("geo_accession") %>% left_join(annot.pat, by = "geo_accession")
+
+gene.list = c("CCL17", "IL3RA", "PLG", "LY96", "CXCR3")
+# gene.list = list("LY96")
+var = "Labels"
+plot.list = map2(as.list(levels(expr$Tissue)), var, function(tissue, var){
+  expr.long = expr %>%
+    filter(Tissue == tissue) %>%
+    dplyr::select(var, all_of(gene.list[gene.list %in% colnames(expr)])) %>%
+    pivot_longer(cols = -var, names_to = "Gene", values_to = "Expression") %>%
+    mutate(Expression = log2(Expression))
+  ggplot(expr.long, aes(x = .data[[var]], y = Expression, fill = .data[[var]], col = .data[[var]])) +
+    geom_boxplot(alpha = 0.25, outlier.alpha = 0, col = "black") + geom_jitter(width = 0.2, alpha = 0.25) +
+    facet_wrap(.~Gene, scales = "free", nrow = 1) +
+    stat_compare_means(comparisons = list(c(2,3), c(2,4), c(3,4)), na.rm = TRUE, size = 2.5) +
+    labs(x = NULL, y = "mRNA levels (log2)", title = tissue, col = "Condition", fill = "Condition") +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+    theme_bw() + 
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+})
+wrap_plots(plot.list, nrow = 2) + 
+  plot_annotation("Transplant transcriptomics\nFlechner Am J Transplant. 2004") & theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output/Transplant-Flechner-Transcriptomics_All.pdf", width = 9.5, height = 5.5)
 
 ```
+
+
+
+
+## Other
+
