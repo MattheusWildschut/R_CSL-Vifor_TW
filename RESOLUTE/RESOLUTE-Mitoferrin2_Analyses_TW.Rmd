@@ -7,17 +7,82 @@ output: html_document
 
 Built with R version `r getRversion()`
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
 ```{r load packages & functions, include=FALSE}
 setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/RESOLUTE")
 source("../SourceFile_TW.R")
-
-```
-
-```{r setup, include=FALSE}
-opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
 # RESOLUTE_Mitoferrin-2_Analyses {.tabset}
+
+## Ionomics
+```{r Mitoferrin-2 Ionomics, fig.width=5.5, fig.height=4.5}
+bca = fread("Input/BCA_TW.csv") %>%
+  filter(Fraction == "Cytosolic")
+raw.data = fread("Input/Ionomics_MIU03_TW.csv") 
+data = raw.data %>%
+  dplyr::mutate(across(-Name & -Condition, as.numeric)) %>%
+  left_join(bca, by = "Name") %>%
+  dplyr::mutate(across(contains(c("(MR)", "(HR)")), ~.x/Concentration*1000)) %>%
+  `colnames<-`(str_remove(colnames(.), "\\(.*\\)")) %>%
+  dplyr::select(-Code & -Concentration & -Fraction) %>%
+  pivot_longer(cols = -Name & -Condition, names_to = "Ion", values_to = "Concentration") %>%
+  mutate(Condition = factor(Condition, levels = c("DOX+", "DOX-")),
+         Ion = factor(Ion, levels =  c("Mn55", "Cu63", "Zn66", "Fe58", "Fe56"))) %>%
+  filter(!is.na(Ion)) %>%
+  group_by(Ion, Condition) %>% add_tally %>%
+  dplyr::mutate(Mean = mean(Concentration, na.rm = TRUE), sd = sd(Concentration, na.rm = TRUE),
+                se = sd/sqrt(n), Max = max(Concentration, na.rm = TRUE))
+
+ggplot(data, aes(x = Condition, y = Concentration, group = Condition, col = Condition)) +
+  stat_summary(fun.y = "mean", fun.ymin = "mean", fun.ymax= "mean", width = 0.4, geom = "crossbar", col = "black") +
+  geom_point() +
+  scale_color_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80")) +
+  facet_wrap(.~Ion, scales = "free", nrow = 2) +
+  # geom_errorbar(aes(ymin=Mean, ymax=Max), width=.2) +
+  labs(x = NULL, y = "Ion concentration (ug/L) / Protein (mg/ml)") +
+  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0,0.125))) +
+  stat_compare_means(comparisons = list(c(1,2)), method = "t.test", method.args = list(var.equal = TRUE), size = 4)
+
+ggsave("Output/Mitof2_Ionomics_Dots.pdf", width = 5.5, height = 4.5)
+
+```
+
+## RPA assay data
+
+### Software comparison
+
+```{r RPA data, fig.width=5, fig.height=5.25}
+data = fread("Input/RPA-data_TW.csv", stringsAsFactors = TRUE) %>%
+  mutate(Software = factor(Software, levels = c("ScanR", "Columbus Cytoplasm", "Columbus Find Spots")),
+         Concentration = factor(Concentration, levels = c("No Fe2+ added", "10uM Fe2+", "100uM Fe2+")),
+         Condition = factor(Condition, levels = c("DOX-", "DOX+"))) %>%
+  group_by(Software, Concentration) %>% 
+  dplyr::mutate(FC = mean(RPA[Condition == "DOX-"])/mean(RPA[Condition == "DOX+"]))
+
+ggplot(data, aes(x = Condition, y = RPA, fill = Condition, col = Condition)) +
+  geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(alpha = 0.75, width = 0.25) +
+  facet_grid(Software~Concentration, scales = "free") +
+  xlab(NULL) +
+  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  stat_compare_means(comparisons = list(c(1,2)), method = "t.test", method.args = list(var.equal = TRUE),
+                     label = "p.signif", vjust = 0.4, hide.ns = TRUE) +
+  scale_y_continuous(expand = expansion(mult = c(0.05,0.1))) +
+  scale_color_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80")) + 
+  scale_fill_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80"))
+
+```
+### Serum comparison
+
+```{r Serum comparison}
+
+
+```
+
 
 ## RESOLUTE transcriptomics
 Data exported from RESOLUTE transcriptomics dashboard \

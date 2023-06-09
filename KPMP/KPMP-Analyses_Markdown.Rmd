@@ -1,36 +1,45 @@
+---
+title: "KPMP-Analyses_Markdown_TW"
+author: "Thijs (Mattheus) Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages & functions, include=FALSE}
 setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/KPMP")
 source("../SourceFile_TW.R")
+```
 
-# install.packages("Seurat")
-# remotes::install_github("mojaveazure/seurat-disk")
-# install.packages("Matrix")
+# KPMP_Analyses {.tabset}
 
-annot.scRNA = fread("Input/GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Metadata_Field_Descriptions.txt.gz") 
-annot.snRNA = fread("Input/GSE183277_Kidney_Healthy-Injury_Cell_Atlas_snCv3_Metadata_Field_Descriptions.txt.gz")
-pat.annot2 = read.csv("Input/72ec8f42-750f-4e1b-bda9-7300d4de1365_20221208_OpenAccessClinicalData.csv")
+## scRNAseq
 
-## Data from https://atlas.kpmp.org/repository/?facetTab=files&files_size=60&files_sort=%5B%7B%22field%22%3A%22
-## file_name%22%2C%22order%22%3A%22asc%22%7D%5D&filters=%7B%22op%22%3A%22and%22%2C%22content%22%3A%5B%7B%22op%22%3A%22in
-## %22%2C%22content%22%3A%7B%22field%22%3A%22dois%22%2C%22value%22%3A%5B%2210.48698%2F92nk-e805%22%5D%7D%7D%5D%7D
-data.scRNA = LoadH5Seurat("Input/521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat", assays = list(RNA = c("data", "counts")))
+### Load data
+
+Data from https://atlas.kpmp.org/repository/?facetTab=files&filters=%7B%22op%22%3A%22and%22%2C%22content%22%3A%5B%7B%22op%22%3A%22in%22%2C%22content%22%3A%7B%22field%22%3A%22data_format%22%2C%22value%22%3A%5B%22h5Seurat%22%5D%7D%7D%2C%7B%22op%22%3A%22in%22%2C%22content%22%3A%7B%22field%22%3A%22experimental_strategy%22%2C%22value%22%3A%5B%22Single-cell%20RNA-Seq%22%5D%7D%7D%5D%7D
+
+- Go to: (KPMP data Repository)[https://atlas.kpmp.org/repository/]
+- Click tab "File"
+- Filter "Experimental Strategy" -> **Single-cell RNA-seq**
+- Filter "Data Format" -> **h5Seurat**
+
+```{r KPMP Load data, include=FALSE}
+# annot.scRNA = fread("Input/GSE183276_Kidney_Healthy-Injury_Cell_Atlas_scCv3_Metadata_Field_Descriptions.txt.gz") 
+# annot.snRNA = fread("Input/GSE183277_Kidney_Healthy-Injury_Cell_Atlas_snCv3_Metadata_Field_Descriptions.txt.gz")
+# pat.annot2 = read.csv("Input/72ec8f42-750f-4e1b-bda9-7300d4de1365_20221208_OpenAccessClinicalData.csv")
+
+data.scRNA = LoadH5Seurat("Input/521c5b34-3dd0-4871-8064-61d3e3f1775a_PREMIERE_Alldatasets_08132021.h5Seurat",
+                          assays = list(RNA = c("data", "counts")))
 data.scRNA@meta.data$class = data.scRNA@meta.data$ClusterClass
 data.scRNA@meta.data$Patient = str_remove(data.scRNA@meta.data$orig.ident, "a$|b$|c$")
+```
 
-## KPMP single cell correlations -------------------------------------------------------------------------------------------------
-data.sel = subset(data.scRNA, subclass.l2 == "pDC")# & P2RY14 > 0)
-gene = "CLEC4C"
-scatter.plots = map(list("BCL11A", "CBFA2T3", "CLEC4C", "IRF7", "IRF8", "IL3RA", "TCF4", "CD83", "CD86"), function(gene){
-  # data.sel
-  FeatureScatter(data.sel, #cells = colnames(data.sel@assays$RNA@data)[data.sel@assays$RNA@data[gene,] > 0],
-                 feature1 = "P2RY14", feature2 = gene, plot.cor = FALSE, jitter = TRUE)# +
-    # geom_smooth(formula = y ~ x, method = "lm") +
-    # stat_cor()
-})
-wrap_plots(scatter.plots, guides = "collect", nrow = 2)
-ggsave("P2Y14/Output/P2RY14_pDC-Markers_CorrelationPlots_AllCells.pdf", width = 14, height = 6)
-
-## KPMP gene list plots ------------------------------------------------------------------------------------------------
-
+### scRNAseq across cell types
+```{r KPMP scRNAseq, fig.width=9, fig.height=9}
 # gene.list = c("P2RY14", "CLEC4C", "IL3RA", "TCF4", "IRF7", "IRF8", "CBFA2T3", "BCL11A")
 gene.list = c("CCL17", "IL3RA", "LY96", "CXCR3", "PLG")
 
@@ -81,17 +90,14 @@ plot.list = map(as.list(gene.list), function(gene){
 })
 wrap_plots(plot.list, nrow = 1)
 ggsave("Output/KPMPquery-scRNA_CSLassets_TW.pdf", width = 9, height = 9)
+```
 
-## KPMP-Immune gene list plots ------------------------------------------------------------------------------------------------
-
+### scRNAseq within Immune
+```{r KPMP scRNAseq Immune, fig.width=9, fig.height=9}
 # gene.list = c("P2RY14", "CLEC4C", "IL3RA", "TCF4", "IRF7", "IRF8", "CBFA2T3", "BCL11A")
 gene.list = c("CCL17", "IL3RA", "LY96", "CXCR3", "PLG")
 
 data.scRNA2 = subset(data.scRNA, subclass.l1 == "Immune")
-data.scRNA3 = subset(data.scRNA2, subclass.l2 == "cycMNP")
-a = as.data.frame(data.scRNA3@assays$RNA@data) %>% select(contains("LD")) %>% 
-  rownames_to_column("Gene")
-a["LY96",]
 
 meta.data = data.scRNA2@meta.data %>%
   mutate(Patient = str_remove(orig.ident, "a$|b$|c$"),
@@ -168,7 +174,28 @@ plot.list = map(as.list(gene.list), function(gene){
 wrap_plots(plot.list, nrow = 1)
 ggsave("Output/KPMPquery-Immune-scRNA_CSLassets_TW.pdf", width = 9, height = 9)
 
-## KPMP ClinicaL variables -----------------------------------------------------------------
+```
+
+### scRNAseq correlations
+```{r KPMP scRNAseq correlations, fig.width=14, fig.height=6}
+data.sel = subset(data.scRNA, subclass.l2 == "pDC")# & P2RY14 > 0)
+gene = "CLEC4C"
+scatter.plots = map(list("BCL11A", "CBFA2T3", "CLEC4C", "IRF7", "IRF8", "IL3RA", "TCF4", "CD83", "CD86"), function(gene){
+  # data.sel
+  FeatureScatter(data.sel, #cells = colnames(data.sel@assays$RNA@data)[data.sel@assays$RNA@data[gene,] > 0],
+                 feature1 = "P2RY14", feature2 = gene, plot.cor = FALSE, jitter = TRUE)# +
+    # geom_smooth(formula = y ~ x, method = "lm") +
+    # stat_cor()
+})
+wrap_plots(scatter.plots, guides = "collect", nrow = 2)
+ggsave("P2Y14/Output/P2RY14_pDC-Markers_CorrelationPlots_AllCells.pdf", width = 14, height = 6)
+
+```
+
+## Clinical variables
+
+### Boxplots calcium-phosphate
+```{r CaP boxplots, fig.width=8.25, fig.height=3.75}
 raw.data = readxl::read_excel("Input/Biomarkers/OP-BC AU5812-Plasma Biomarker Data File-2022.xlsx",
                  sheet = 1)
 raw.data2 = readxl::read_excel("Input/Biomarkers/OP-MSDQ120-Plasma Biomarker Data-2022.xlsx",
@@ -182,27 +209,44 @@ data = raw.data %>%
   mutate(`Calcium (mg/dL)` = as.numeric(`Calcium (mg/dL)`),
          `Phosphate (mg/dL)` = as.numeric(`Phosphate (mg/dL)`),
          Disease = factor(`Tissue Type`, levels = c("Healthy Reference", "AKI", "CKD")),
-         Calcium_x_Phosphate = `Calcium (mg/dL)`*`Phosphate (mg/dL)`)
-vars = list("Calcium (mg/dL)", "Phosphate (mg/dL)", "Calcium_x_Phosphate")
+         Calcium_x_Phosphate = `Calcium (mg/dL)`*`Phosphate (mg/dL)`,
+         `Calcium (mg/dL) * Phosphate (mg/dL)` = `Calcium (mg/dL)`*`Phosphate (mg/dL)`)
+vars = list("Calcium (mg/dL)", "Phosphate (mg/dL)", "Calcium (mg/dL) * Phosphate (mg/dL)")
 
 plot.list = map(vars, function(var){
   ggplot(data, aes(x = Disease, y = .data[[var]], col = Disease, fill = Disease)) +
     geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(alpha = 0.5, width = 0.25) +
-    stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3))) +
+    stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3)), size = 3.2) +
     theme_bw() + theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + xlab(NULL)
 })
-wrap_plots(plot.list, guides = "collect")
+wrap_plots(plot.list, guides = "collect") + plot_annotation("KPMP Cohort\nBlood serum measurements") &
+  theme(plot.title = element_text(hjust = 0.5))
 
-ggsave("Output/KPMP_Calcium-Phosphate_TW.pdf", width = 9, height = 3.5)
+ggsave("Output/KPMP_Calcium-Phosphate_TW.pdf", width = 8.25, height = 3.75)
 
+```
+
+### Correlations calcium-phosphate
+```{r CaP correlations, fig.width=5.75, fig.height=6.25}
 vars = list("Creatinine (mg/dL)", "Cystatin C (mg/L)",
             "C-reactive protein (high sensitivity) (mg/L )", "IL-6 Concentration (pg/mL)")
-plot.list = map(vars, function(var){
-  ggplot(data, aes(x = Calcium_x_Phosphate, y = .data[[var]], col = Disease)) +
-    geom_point() +
-    geom_smooth(formula = y~x, method = "lm") +
-    stat_cor() +
-    theme_bw()
+cohorts = list("All", "AKI")
+plot.list = map(cohorts, function(cohort){
+  map2(vars, cohort, function(var, cohort){
+    data.plot = if(cohort == "AKI") data %>% filter(Disease == "AKI") else data
+    if(cohort == "All") plot = ggplot(data.plot, aes(x = Calcium_x_Phosphate, y = .data[[var]],
+                                                     col = Disease))
+    if(cohort == "AKI") plot = ggplot(data.plot, aes(x = Calcium_x_Phosphate, y = .data[[var]]))
+    plot +
+      geom_point(alpha = 0.5, size = 1) +
+      geom_smooth(formula = y~x, method = "lm", alpha = 0.2) +
+      stat_cor(size = 4) +
+      theme_bw() + xlab("Calcium (mg/dL) * Phosphate (mg/dL)")
+  })
 })
-wrap_plots(plot.list, guides = "collect")
-data$`IL-6 Concentration (pg/mL)`
+wrap_plots(append(plot.list[[1]], plot.list[[2]]), guides = "collect", nrow = 2) #fig.width=13, fig.height=6
+wrap_plots(plot.list[[2]], nrow = 2) + plot_annotation("KPMP AKI patients\nBlood measurement correlations") &
+  theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output/KPMP-AKI_CalciumPhosphate_Correlations.pdf", width = 5.75, height = 6.25)
+
+```
