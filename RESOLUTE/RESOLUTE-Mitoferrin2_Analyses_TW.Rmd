@@ -52,37 +52,135 @@ ggsave("Output/Mitof2_Ionomics_Dots.pdf", width = 5.5, height = 4.5)
 
 ```
 
-## RPA assay data
+## RPA assay
+
+### Load RPA data
+```{r Load RPA data}
+RPA.data = fread("Input/RPA-data_TW.csv", stringsAsFactors = TRUE) %>%
+  as.data.frame %>%
+  mutate(Software = factor(Software, levels = c("ScanR", "Columbus Cytoplasm", "Columbus Find Spots")),
+         Concentration = factor(Concentration, levels = c("No Fe2+ added", "10uM Fe2+", "100uM Fe2+")),
+         Condition = factor(Condition, levels = c("DOX-", "DOX+")),
+         Celltype = factor(Celltype, levels = c("HEKiM2", "HEK-JI-WT")))
+
+RPA.plot = function(data){
+  ggplot(data, aes(x = Condition, y = RPA, fill = Condition, col = Condition)) +
+    geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(alpha = 0.75, width = 0.25) +
+    xlab(NULL) + ylab("RPA intensity (AU)\nAverage per well") +
+    theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+    stat_compare_means(comparisons = list(c(1,2)), method = "t.test", method.args = list(var.equal = TRUE),
+                       label = "p.signif", vjust = 0.4, hide.ns = TRUE) +
+    scale_y_continuous(expand = expansion(mult = c(0,0.1)), limits = c(0,NA)) +
+    scale_color_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80")) + 
+    scale_fill_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80"))
+}
+```
+
+### HEKiM2 vs HEK-JI-WT comparison
+
+```{r HEK-JI-WT comparison, fig.width=4, fig.height=2.4}
+data = RPA.data %>%
+  filter(Plot == "HEK-JI-WT")
+
+RPA.plot(data) +
+  facet_grid(.~Celltype, scales = "free")
+ggsave("Output/RPA_HEK-JI-WT.pdf", width = 4, height = 2.4)
+
+```
+
+### Time course (0-50 minutes)
+```{r RPA Time course, fig.width=4.5, fig.height=3}
+data = RPA.data %>%
+  filter(Plot == "Timecourse")
+
+data.sum = data %>%
+  group_by(Condition, Timepoint) %>%
+  dplyr::mutate(N = length(RPA), Mean = mean(RPA), sd = sd(RPA), se = sd/sqrt(N))
+
+ggplot(data.sum, aes(x = Timepoint, y = Mean, fill = Condition, col = Condition, group = Condition)) +
+  # geom_point(aes(y = RPA))
+  geom_errorbar(aes(ymin = Mean-se, ymax = Mean+se), width = 2.5) +
+  geom_line() + geom_point() +
+  scale_y_continuous(expand = expansion(mult = c(0,0.05)), limits = c(0,NA)) +
+  scale_color_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80")) +
+  xlab("Time point\nMinutes after RPA addition") + ylab("RPA intensity (AU)\nMean per well") +
+  theme_bw()
+
+ggsave("Output/RPA_Timecourse.pdf", width = 4.5, height = 3)
+
+```
 
 ### Software comparison
 
-```{r RPA data, fig.width=5, fig.height=5.25}
-data = fread("Input/RPA-data_TW.csv", stringsAsFactors = TRUE) %>%
-  mutate(Software = factor(Software, levels = c("ScanR", "Columbus Cytoplasm", "Columbus Find Spots")),
-         Concentration = factor(Concentration, levels = c("No Fe2+ added", "10uM Fe2+", "100uM Fe2+")),
-         Condition = factor(Condition, levels = c("DOX-", "DOX+"))) %>%
+```{r Software comparison, fig.width=5.5, fig.height=5.25}
+data = RPA.data %>%
+  filter(Plot == "Software") %>%
   group_by(Software, Concentration) %>% 
   dplyr::mutate(FC = mean(RPA[Condition == "DOX-"])/mean(RPA[Condition == "DOX+"]))
 
-ggplot(data, aes(x = Condition, y = RPA, fill = Condition, col = Condition)) +
-  geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(alpha = 0.75, width = 0.25) +
-  facet_grid(Software~Concentration, scales = "free") +
-  xlab(NULL) +
-  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
-  stat_compare_means(comparisons = list(c(1,2)), method = "t.test", method.args = list(var.equal = TRUE),
-                     label = "p.signif", vjust = 0.4, hide.ns = TRUE) +
-  scale_y_continuous(expand = expansion(mult = c(0.05,0.1))) +
-  scale_color_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80")) + 
-  scale_fill_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80"))
+RPA.plot(data) +
+  facet_grid(Software~Concentration, scales = "free")
+
+ggsave("Output/RPA_Software.pdf", width = 5.5, height = 5.25)
 
 ```
+
 ### Serum comparison
 
-```{r Serum comparison}
+```{r Serum comparison, fig.width=5.5, fig.height=4}
+data = RPA.data %>%
+  filter(Plot == "Serum")
 
+RPA.plot(data) +
+  facet_grid(Serum~Concentration, scales = "free")
+
+ggsave("Output/RPA_Serum.pdf", width = 5.5, height = 4)
 
 ```
 
+### Passage variability
+
+```{r Passages comparison, fig.width=5.5, fig.height=2.4}
+data = RPA.data %>%
+  filter(Plot == "Passages")
+
+RPA.plot(data) +
+  facet_grid(Serum~Passage, scales = "free")
+
+ggsave("Output/RPA_Passages.pdf", width = 5.5, height = 2.4)
+
+```
+
+### One function to plot them all
+```{r RPA function}
+RPA.data = fread("Input/RPA-data_TW.csv", stringsAsFactors = TRUE) %>%
+  as.data.frame %>%
+  mutate(Software = factor(Software, levels = c("ScanR", "Columbus Cytoplasm", "Columbus Find Spots")),
+         Concentration = factor(Concentration, levels = c("No Fe2+ added", "10uM Fe2+", "100uM Fe2+")),
+         Condition = factor(Condition, levels = c("DOX-", "DOX+")))
+
+RPA.function = function(variable, facet1, facet2){
+  data = RPA.data %>%
+    filter(Plot == variable) %>%
+    mutate(Facet = .[,facet2])
+  
+  ggplot(data, aes(x = Condition, y = RPA, fill = Condition, col = Condition)) +
+    geom_boxplot(alpha = 0.25, outlier.alpha = 0) + geom_jitter(alpha = 0.75, width = 0.25) +
+    facet_grid(Facet ~ .data[[facet1]], scales = "free") +
+    xlab(NULL) + ylab("RPA intensity (AU)\nAverage per well") +
+    theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+    stat_compare_means(comparisons = list(c(1,2)), method = "t.test", method.args = list(var.equal = TRUE),
+                       label = "p.signif", vjust = 0.4, hide.ns = TRUE) +
+    scale_y_continuous(expand = expansion(mult = c(0,0.1)), limits = c(0,NA)) +
+    scale_color_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80")) + 
+    scale_fill_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80"))
+}
+RPA.function("HEK-JI-WT", "Celltype", "Concentration")
+RPA.function("Software", "Concentration", "Software")
+RPA.function("Software", "Concentration", "Software")
+
+
+```
 
 ## RESOLUTE transcriptomics
 Data exported from RESOLUTE transcriptomics dashboard \
@@ -164,9 +262,9 @@ data = gse@assayData$exprs %>% as.data.frame %>%
   group_by(Gene) %>% dplyr::summarise(across(everything(), max))
 data2 = data %>% column_to_rownames("Gene") %>%
   t %>% as.data.frame %>%
-  mutate(Disease = pat.annot$`status:ch1`[match(rownames(.), pat.annot$geo_accession)])
+  mutate(Disease = factor(pat.annot$`status:ch1`[match(rownames(.), pat.annot$geo_accession)],
+                          levels = c("Control", "Carrier", "Patient")))
 
-data2$Disease
 ggplot(data2, aes(x = Disease, y = SLC25A28)) +
   geom_boxplot() +
   stat_compare_means(comparisons = list(c(1,2), c(1,3), c(2,3)), method = "t.test")
