@@ -7,11 +7,12 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/KPMP")
+source("../SourceFile_TW.R")
 ```
 
 ```{r load packages & functions, include=FALSE}
-setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/KPMP")
-source("../SourceFile_TW.R")
+
 ```
 
 # KPMP_Analyses {.tabset}
@@ -206,11 +207,9 @@ data = raw.data %>%
   left_join(raw.data2, by = "Participant ID") %>%
   # select(Participant.ID., Tissue.Type., Sample.Type., "Calcium..mg.dL..", "Phosphate..mg.dL..",
          # "Creatinine..mg.dL..") %>%
-  mutate(`Calcium (mg/dL)` = as.numeric(`Calcium (mg/dL)`),
-         `Phosphate (mg/dL)` = as.numeric(`Phosphate (mg/dL)`),
-         Disease = factor(`Tissue Type`, levels = c("Healthy Reference", "AKI", "CKD")),
-         Calcium_x_Phosphate = `Calcium (mg/dL)`*`Phosphate (mg/dL)`,
-         `Calcium (mg/dL) * Phosphate (mg/dL)` = `Calcium (mg/dL)`*`Phosphate (mg/dL)`)
+  dplyr::mutate(across(contains(c("/dL", "/mL", "/L")), as.numeric),
+                Disease = factor(`Tissue Type`, levels = c("Healthy Reference", "AKI", "CKD")),
+                `Calcium (mg/dL) * Phosphate (mg/dL)` = `Calcium (mg/dL)`*`Phosphate (mg/dL)`)
 vars = list("Calcium (mg/dL)", "Phosphate (mg/dL)", "Calcium (mg/dL) * Phosphate (mg/dL)")
 
 plot.list = map(vars, function(var){
@@ -227,21 +226,24 @@ ggsave("Output/KPMP_Calcium-Phosphate_TW.pdf", width = 8.25, height = 3.75)
 ```
 
 ### Correlations calcium-phosphate
-```{r CaP correlations, fig.width=5.75, fig.height=6.25}
-vars = list("Creatinine (mg/dL)", "Cystatin C (mg/L)",
-            "C-reactive protein (high sensitivity) (mg/L )", "IL-6 Concentration (pg/mL)")
+```{r CaP correlations, fig.width=8.5, fig.height=8.5}
+vars = list(#"Creatinine (mg/dL)", "Cystatin C (mg/L)",
+            #"C-reactive protein (high sensitivity) (mg/L )", "IL-6 Concentration (pg/mL)",
+            "IL-10 Concentration (pg/mL)", "IL-1β Concentration (pg/mL)", "IL-4 Concentration (pg/mL)",
+            "KIM-1 Concentration (pg/mL)", "MCP-1 Concentration (pg/mL)", "NGAL Concentration (pg/mL)",
+            "TNF-α Concentration (pg/mL)")
 cohorts = list("All", "AKI")
 plot.list = map(cohorts, function(cohort){
   map2(vars, cohort, function(var, cohort){
     data.plot = if(cohort == "AKI") data %>% filter(Disease == "AKI") else data
-    if(cohort == "All") plot = ggplot(data.plot, aes(x = Calcium_x_Phosphate, y = .data[[var]],
+    if(cohort == "All") plot = ggplot(data.plot, aes(x = `Calcium (mg/dL) * Phosphate (mg/dL)`, y = .data[[var]],
                                                      col = Disease))
-    if(cohort == "AKI") plot = ggplot(data.plot, aes(x = Calcium_x_Phosphate, y = .data[[var]]))
+    if(cohort == "AKI") plot = ggplot(data.plot, aes(x = `Calcium (mg/dL) * Phosphate (mg/dL)`, y = .data[[var]]))
     plot +
       geom_point(alpha = 0.5, size = 1) +
       geom_smooth(formula = y~x, method = "lm", alpha = 0.2) +
       stat_cor(size = 4) +
-      theme_bw() + xlab("Calcium (mg/dL) * Phosphate (mg/dL)")
+      theme_bw()
   })
 })
 wrap_plots(append(plot.list[[1]], plot.list[[2]]), guides = "collect", nrow = 2) #fig.width=13, fig.height=6
@@ -249,4 +251,50 @@ wrap_plots(plot.list[[2]], nrow = 2) + plot_annotation("KPMP AKI patients\nBlood
   theme(plot.title = element_text(hjust = 0.5))
 ggsave("Output/KPMP-AKI_CalciumPhosphate_Correlations.pdf", width = 5.75, height = 6.25)
 
+wrap_plots(plot.list[[2]]) + 
+  plot_annotation("KPMP AKI patients\nBlood measurement correlations (extra)") &
+  theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output/KPMP-AKI_CalciumPhosphate_ExtraCorrelations.pdf", width = 8.5, height = 8.5)
+
 ```
+
+### Correlations to urine markers
+```{r Urine correlations, fig.width=8.5, fig.height=8.5}
+raw.data3 = readxl::read_excel("Input/Biomarkers/OP-MSDQ120-Urine Biomarker Data-2022.xlsx",
+                               sheet = 1)
+
+data = raw.data %>%
+  `colnames<-`(str_remove_all(colnames(.), "\\ ")) %>%
+  filter(`Sample Type` == "Serum") %>%
+  left_join(raw.data3, by = "Participant ID") %>%
+  dplyr::mutate(across(contains(c("/dL", "/mL", "/L")), as.numeric),
+                Disease = factor(`Tissue Type`, levels = c("Healthy Reference", "AKI", "CKD")),
+                `Calcium (mg/dL) * Phosphate (mg/dL)` = `Calcium (mg/dL)`*`Phosphate (mg/dL)`)
+
+vars = list(#"Creatinine (mg/dL)", "Cystatin C (mg/L)",
+            #"C-reactive protein (high sensitivity) (mg/L )", "IL-6 Concentration (pg/mL)",
+            "IL-10 Concentration (pg/mL)", "IL-1β Concentration (pg/mL)", "IL-4 Concentration (pg/mL)",
+            "KIM-1 Concentration (pg/mL)", "MCP-1 Concentration (pg/mL)", "NGAL Concentration (pg/mL)",
+            "TNF-α Concentration (pg/mL)")
+cohorts = list("All", "AKI")
+plot.list = map(cohorts, function(cohort){
+  map2(vars, cohort, function(var, cohort){
+    data.plot = if(cohort == "AKI") data %>% filter(Disease == "AKI") else data
+    if(cohort == "All") plot = ggplot(data.plot, aes(x = `Calcium (mg/dL) * Phosphate (mg/dL)`, y = .data[[var]],
+                                                     col = Disease))
+    if(cohort == "AKI") plot = ggplot(data.plot, aes(x = `Calcium (mg/dL) * Phosphate (mg/dL)`, y = .data[[var]]))
+    plot +
+      geom_point(alpha = 0.5, size = 1) +
+      geom_smooth(formula = y~x, method = "lm", alpha = 0.2) +
+      stat_cor(size = 4) +
+      theme_bw()# + xlab("Calcium (mg/dL) * Phosphate (mg/dL)")
+  })
+})
+
+wrap_plots(plot.list[[2]]) + 
+  plot_annotation("KPMP AKI patients\nBlood CaPi vs Urine markers correlations") &
+  theme(plot.title = element_text(hjust = 0.5))
+ggsave("Output/KPMP-AKI_CalciumPhosphate_UrineCorrelations.pdf", width = 8.5, height = 8.5)
+
+```
+
