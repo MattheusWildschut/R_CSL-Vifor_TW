@@ -9,11 +9,12 @@ Built with R version `r getRversion()`
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/RESOLUTE")
+source("../SourceFile_TW.R")
 ```
 
 ```{r load packages & functions, include=FALSE}
-setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/RESOLUTE")
-source("../SourceFile_TW.R")
+
 ```
 
 # RESOLUTE_Mitoferrin-2_Analyses {.tabset}
@@ -30,12 +31,16 @@ data = raw.data %>%
   `colnames<-`(str_remove(colnames(.), "\\(.*\\)")) %>%
   dplyr::select(-Code & -Concentration & -Fraction) %>%
   pivot_longer(cols = -Name & -Condition, names_to = "Ion", values_to = "Concentration") %>%
-  mutate(Condition = factor(Condition, levels = c("DOX+", "DOX-")),
-         Ion = factor(Ion, levels =  c("Mn55", "Cu63", "Zn66", "Fe58", "Fe56"))) %>%
+  mutate(Condition = factor(Condition, levels = c("DOX-", "DOX+")),
+         Ion = factor(Ion, levels =  c("Fe58", "Fe56", "Mn55", "Cu63", "Zn66"))) %>%
   filter(!is.na(Ion)) %>%
   group_by(Ion, Condition) %>% add_tally %>%
   dplyr::mutate(Mean = mean(Concentration, na.rm = TRUE), sd = sd(Concentration, na.rm = TRUE),
                 se = sd/sqrt(n), Max = max(Concentration, na.rm = TRUE))
+data.fold = data %>%
+  group_by(Ion) %>%
+  dplyr::summarise(FC = mean(Concentration[Condition == "DOX+"])/mean(Concentration[Condition == "DOX-"]))
+  
 
 ggplot(data, aes(x = Condition, y = Concentration, group = Condition, col = Condition)) +
   stat_summary(fun.y = "mean", fun.ymin = "mean", fun.ymax= "mean", width = 0.4, geom = "crossbar", col = "black") +
@@ -43,12 +48,12 @@ ggplot(data, aes(x = Condition, y = Concentration, group = Condition, col = Cond
   scale_color_manual(values = c("DOX+" = "grey40", "DOX-" = "grey80")) +
   facet_wrap(.~Ion, scales = "free", nrow = 2) +
   # geom_errorbar(aes(ymin=Mean, ymax=Max), width=.2) +
-  labs(x = NULL, y = "Ion concentration (ug/L) / Protein (mg/ml)") +
+  labs(x = NULL, y = "Ion concentration (ug/L)\nNormalized to protein (mg/ml)") +
   theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
   scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0,0.125))) +
   stat_compare_means(comparisons = list(c(1,2)), method = "t.test", method.args = list(var.equal = TRUE), size = 4)
 
-ggsave("Output/Mitof2_Ionomics_Dots.pdf", width = 5.5, height = 4.5)
+# ggsave("Output/Mitof2_Ionomics_Dots.pdf", width = 5.5, height = 4.5)
 
 ```
 
@@ -84,7 +89,7 @@ data = RPA.data %>%
 
 RPA.plot(data) +
   facet_grid(.~Celltype, scales = "free")
-ggsave("Output/RPA_HEK-JI-WT.pdf", width = 4, height = 2.4)
+# ggsave("Output/RPA_HEK-JI-WT.pdf", width = 4, height = 2.4)
 
 ```
 
@@ -106,7 +111,7 @@ ggplot(data.sum, aes(x = Timepoint, y = Mean, fill = Condition, col = Condition,
   xlab("Time point\nMinutes after RPA addition") + ylab("RPA intensity (AU)\nMean per well") +
   theme_bw()
 
-ggsave("Output/RPA_Timecourse.pdf", width = 4.5, height = 3)
+# ggsave("Output/RPA_Timecourse.pdf", width = 4.5, height = 3)
 
 ```
 
@@ -121,7 +126,7 @@ data = RPA.data %>%
 RPA.plot(data) +
   facet_grid(Software~Concentration, scales = "free")
 
-ggsave("Output/RPA_Software.pdf", width = 5.5, height = 5.25)
+# ggsave("Output/RPA_Software.pdf", width = 5.5, height = 5.25)
 
 ```
 
@@ -134,7 +139,7 @@ data = RPA.data %>%
 RPA.plot(data) +
   facet_grid(Serum~Concentration, scales = "free")
 
-ggsave("Output/RPA_Serum.pdf", width = 5.5, height = 4)
+# ggsave("Output/RPA_Serum.pdf", width = 5.5, height = 4)
 
 ```
 
@@ -147,7 +152,7 @@ data = RPA.data %>%
 RPA.plot(data) +
   facet_grid(Serum~Passage, scales = "free")
 
-ggsave("Output/RPA_Passages.pdf", width = 5.5, height = 2.4)
+# ggsave("Output/RPA_Passages.pdf", width = 5.5, height = 2.4)
 
 ```
 
@@ -211,7 +216,7 @@ plot = ggplot(data, aes(x = SignedP_WT, y = SignedP_KO)) +
   theme_bw()
 plot2 = plot + coord_cartesian(xlim = c(-15,15), ylim = c(-15,15))
 plot + plot2
-ggsave("Output/SLC25A28-Transcriptomics_WT-OE_KO-OE.pdf", width = 10, height = 4)
+# ggsave("Output/SLC25A28-Transcriptomics_WT-OE_KO-OE.pdf", width = 10, height = 4)
 
 ```
 <hr style="border:1px solid gray"></hr>

@@ -11,10 +11,6 @@ setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL
 source("../SourceFile_TW.R")
 ```
 
-```{r load packages & functions, include=FALSE}
-
-```
-
 # KPMP_Analyses {.tabset}
 
 ## scRNAseq
@@ -229,9 +225,10 @@ ggsave("Output/KPMP_Calcium-Phosphate_TW.pdf", width = 8.25, height = 3.75)
 ```{r CaP correlations, fig.width=8.5, fig.height=8.5}
 vars = list(#"Creatinine (mg/dL)", "Cystatin C (mg/L)",
             #"C-reactive protein (high sensitivity) (mg/L )", "IL-6 Concentration (pg/mL)",
-            "IL-10 Concentration (pg/mL)", "IL-1β Concentration (pg/mL)", "IL-4 Concentration (pg/mL)",
-            "KIM-1 Concentration (pg/mL)", "MCP-1 Concentration (pg/mL)", "NGAL Concentration (pg/mL)",
-            "TNF-α Concentration (pg/mL)")
+            # "IL-10 Concentration (pg/mL)", "IL-1β Concentration (pg/mL)", "IL-4 Concentration (pg/mL)",
+            # "KIM-1 Concentration (pg/mL)", "MCP-1 Concentration (pg/mL)", "NGAL Concentration (pg/mL)",
+            # "TNF-α Concentration (pg/mL)")
+            "eGFRCr", "eGFRCys")
 cohorts = list("All", "AKI")
 plot.list = map(cohorts, function(cohort){
   map2(vars, cohort, function(var, cohort){
@@ -295,6 +292,38 @@ wrap_plots(plot.list[[2]]) +
   plot_annotation("KPMP AKI patients\nBlood CaPi vs Urine markers correlations") &
   theme(plot.title = element_text(hjust = 0.5))
 ggsave("Output/KPMP-AKI_CalciumPhosphate_UrineCorrelations.pdf", width = 8.5, height = 8.5)
+
+```
+
+### Correlations to clinical markers
+```{r Clinical correlations, fig.width=3.5, fig.height=3.5}
+raw.data4 = fread("Input/72ec8f42-750f-4e1b-bda9-7300d4de1365_20221208_OpenAccessClinicalData.csv")
+
+data = raw.data %>%
+  `colnames<-`(str_remove_all(colnames(.), "\\ ")) %>%
+  filter(`Sample Type` == "Serum") %>%
+  left_join(raw.data4, by = c("Participant ID", "Tissue Type")) %>%
+  dplyr::mutate(across(contains(c("/dL", "/mL", "/L")), as.numeric),
+                Disease = factor(`Tissue Type`, levels = c("Healthy Reference", "AKI", "CKD")),
+                `Calcium (mg/dL) * Phosphate (mg/dL)` = `Calcium (mg/dL)`*`Phosphate (mg/dL)`,
+                `KDIGO Stage` = str_extract(`KDIGO Stage`, "[:digit:]"))#,
+                # `Baseline eGFR (ml/min/1.73m2) (Binned)` = str_remove_all(`Baseline eGFR (ml/min/1.73m2) (Binned)`,
+                                                                                     # "-.*|\\[|,.*"))
+
+vars = list("KDIGO Stage")#, "Baseline eGFR (ml/min/1.73m2) (Binned)")
+plot.list = map(vars, function(var){
+  data.plot = data %>% filter(Disease == "AKI")
+  ggplot(data.plot, aes(x = .data[[var]], y = `Calcium (mg/dL) * Phosphate (mg/dL)`, fill = .data[[var]], col = .data[[var]])) +
+    geom_boxplot(alpha = 0.25) +
+    geom_jitter(alpha = 0.5, width = 0.2, size = 1) +
+    stat_compare_means(comparisons = list(c(2,3)), method = "t.test", method.args = list(var.equal = TRUE), size = 3) +
+    theme_bw()
+})
+
+wrap_plots(plot.list) + 
+  plot_annotation("KPMP AKI patients\nBlood CaPi vs Urine markers correlations") &
+  theme(plot.title = element_text(hjust = 0.5))
+# ggsave("Output/KPMP-AKI_CalciumPhosphate_UrineCorrelations.pdf", width = 8.5, height = 8.5)
 
 ```
 

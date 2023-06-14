@@ -1,0 +1,52 @@
+---
+title: "qPCR_Natalia_TW"
+author: "Thijs (Mattheus) Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/qPCR")
+source("../SourceFile_TW.R")
+```
+
+# qPCR Natalia  {.tabset}
+
+### Load data
+```{r Load data, fig.width=8, fig.height=5}
+raw.data = fread("Input/20230425_NB_RPTEC2_REP2.txt")
+raw.layout = readxl::read_excel("Input/20230321_NB_RPTEC2_Protocol_copy.xlsx", sheet = "LAYOUT")
+samples = readxl::read_excel("Input/20230321_NB_RPTEC2_Protocol_copy.xlsx", sheet = "SAMPLE LIST")
+
+layout = raw.layout %>% dplyr::select(-Gene)
+layout.genes = raw.layout %>% dplyr::select(Gene) %>% na.omit %>% unlist
+
+layout.long = layout %>%
+  `colnames<-`(c("Row", paste(colnames(.)[-1], layout.genes))) %>%
+  pivot_longer(cols = -Row, names_to = c("first", "second", "third", "Gene"), 
+               names_pattern = "(.*) (.*) (.*) (.*)", values_to = "Condition") %>%
+  pivot_longer(cols = c(first, second, third), values_to = "Column") %>%
+  mutate(Well = paste0(Row, Column)) %>%
+  select(Well, Gene, Condition)
+
+data = raw.data %>%
+  select(Pos, Cp) %>%
+  left_join(layout.long, by = join_by("Pos" == "Well")) %>%
+  filter(!is.na(Condition) & Condition != "NTC") %>%
+  mutate(Condition = factor(samples$Samples[match(Condition, samples$No.)], levels = samples$Samples)) %>%
+  group_by(Condition) %>% dplyr::mutate(`Normalized mRNA expression` = 2^-(Cp-mean(Cp[Gene == "HPRT"], na.rm = TRUE))) %>%
+  filter(Gene != "HPRT") %>% mutate(Gene = factor(Gene, levels = layout.genes))
+
+ggplot(data, aes(x = Condition, y = `Normalized mRNA expression`, fill = Condition)) +
+  geom_point(size = 1.75, shape = 21, col = "grey30", stroke = 0.01) +
+  facet_wrap(.~Gene, scales = "free") +
+  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+                     panel.grid.major.x = element_blank()) +
+  xlab(NULL)
+
+ggsave("Output/TrialNatalia_TW_14-06-23.pdf", width = 8, height = 5)
+
+```
+
+ 
