@@ -7,14 +7,14 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/qPCR")
+# setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/qPCR")
 source("../SourceFile_TW.R")
 ```
 
 # qPCR Natalia  {.tabset}
 
-### Load data
-```{r Load data, fig.width=8, fig.height=5}
+## Experiment RPTEC2
+```{r Experiment RPTEC2, fig.width=8, fig.height=5}
 raw.data = fread("Input/20230425_NB_RPTEC2_REP2.txt")
 raw.layout = readxl::read_excel("Input/20230321_NB_RPTEC2_Protocol_copy.xlsx", sheet = "LAYOUT")
 samples = readxl::read_excel("Input/20230321_NB_RPTEC2_Protocol_copy.xlsx", sheet = "SAMPLE LIST")
@@ -36,16 +36,106 @@ data = raw.data %>%
   filter(!is.na(Condition) & Condition != "NTC") %>%
   mutate(Condition = factor(samples$Samples[match(Condition, samples$No.)], levels = samples$Samples)) %>%
   group_by(Condition) %>% dplyr::mutate(`Normalized mRNA expression` = 2^-(Cp-mean(Cp[Gene == "HPRT"], na.rm = TRUE))) %>%
-  filter(Gene != "HPRT") %>% mutate(Gene = factor(Gene, levels = layout.genes))
+  filter(Gene != "HPRT") %>% mutate(Gene = factor(Gene, levels = layout.genes)) %>%
+  mutate(CellType = factor(str_extract(Condition, "TERT1|RPTEC"), levels = c("TERT1", "RPTEC"))) %>%
+  arrange(Gene, Condition, `Normalized mRNA expression`)
 
-ggplot(data, aes(x = Condition, y = `Normalized mRNA expression`, fill = Condition)) +
-  geom_point(size = 1.75, shape = 21, col = "grey30", stroke = 0.01) +
+ggplot(data, aes(x = Condition, y = `Normalized mRNA expression`, fill = Condition, col = Condition, shape = CellType)) +
+  geom_point(size = 1.75, col = "grey30", stroke = 0.01) +
   facet_wrap(.~Gene, scales = "free") +
+  scale_shape_manual(values = c("TERT1" = 23, "RPTEC" = 21)) +
   theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                      panel.grid.major.x = element_blank()) +
-  xlab(NULL)
+  xlab(NULL) +
+  guides(fill = guide_legend(override.aes = list(shape = ifelse(str_detect(unique(data$Condition), "TERT1"), 23, 21))),
+         shape = guide_legend(override.aes = list(fill = "black")))
 
-ggsave("Output/TrialNatalia_TW_14-06-23.pdf", width = 8, height = 5)
+ggsave("Output/TrialNatalia_TW_14-06-23_3.pdf", width = 8, height = 5)
+
+```
+
+## Experiment RPTEC3
+```{r Experiment RPTEC3, fig.width=15, fig.height=5.5}
+raw.data1 = fread("Input/20230614_NB_RPTEC_Plate1.txt")
+raw.data2 = fread("Input/20230614_NB_RPTEC_Plate2.txt")
+
+layout.file = "Input/20230522_NB_RPTEC3_FACS purity check_injury.xlsx"
+layout.sheet = "qPCR_LAYOUT"
+sample.sheet = "qPCR_SAMPLE LIST"
+
+sample.list = readxl::read_excel(layout.file, sheet = sample.sheet)
+raw.layout = xlsx::read.xlsx(layout.file, sheetName = layout.sheet, header = FALSE)
+
+layout = raw.layout %>%
+  `colnames<-`(LETTERS[1:ncol(.)]) %>%
+  dplyr::mutate(across(everything(), as.character)) %>%
+  rownames_to_column("Row") %>% pivot_longer(-Row, names_to = "Column", values_to = "Condition") %>%
+  dplyr::mutate(Cell = paste0(Column, Row))
+layout.genes = raw.layout %>% dplyr::select(1) %>% unlist %>% .[!is.na(.) & . != "Gene"]
+
+{ ## Function to get cell colors out of Excel file
+  wb     <- loadWorkbook(layout.file)
+  sheet1 <- getSheets(wb)[[layout.sheet]]
+  styles <- sapply(getCells(getRows(sheet1)), getCellStyle)
+  
+  cellColor <- function(style) 
+   {
+    fg  <- style$getFillForegroundXSSFColor()
+    rgb <- tryCatch(fg$getRgb(), error = function(e) NULL)
+    rgb <- paste(rgb, collapse = "")
+    return(rgb)
+  }
+  colors.cells = sapply(styles, cellColor) %>% as.data.frame %>% `colnames<-`("Color") %>%
+    rownames_to_column("Index") %>% 
+    dplyr::mutate(Column.num = as.numeric(str_extract(Index, "(?<=\\.)[:digit:]{1,2}")),
+                  Column = LETTERS[Column.num],
+                  Row = as.numeric(str_extract(Index, "[:digit:]{1,2}(?=\\.)")),
+                  Cell = paste0(LETTERS[Column.num], Row)) %>%
+    arrange(Column.num, Row)
+  
+  colors.genes = colors.cells %>% filter(Column.num == 1 & Row != 1) %>%
+    mutate(Gene = layout.genes) %>%
+    dplyr::select(Cell, Gene, Color)
+}
+
+layout.function = function(rows, columns){
+  colors.cells %>% filter(Row %in% rows & str_detect(Cell, columns)) %>%
+    mutate(Gene = colors.genes$Gene[match(Color, colors.genes$Color)],
+           Condition.num = layout$Condition[match(Cell, layout$Cell)],
+           Condition = factor(sample.list$Samples[match(Condition.num, sample.list$No)], levels = sample.list$Samples),
+           Column.num = Column.num-min(Column.num)+1,
+           Row = Row-min(Row)+1,
+           Well = paste0(LETTERS[Row], Column.num))
+}
+data1 = layout.function(rows = 2:17, columns = "[C-Z]") %>%
+  left_join(raw.data1 %>% select(Pos, Cp), by = join_by("Well" == "Pos"))
+data2 = layout.function(rows = 21:36, columns = "[C-Z]") %>%
+  left_join(raw.data2 %>% select(Pos, Cp), by = join_by("Well" == "Pos"))
+
+data = rbind.data.frame(data1, data2) %>%
+  filter(!is.na(Condition) & Condition != "NTC") %>%
+  group_by(Condition) %>% dplyr::mutate(Cp_norm = Cp-mean(Cp[Gene == "HPRT"], na.rm = TRUE)) %>%
+  filter(Gene != "HPRT") %>% mutate(Gene = factor(Gene, levels = layout.genes)) %>%
+  # group_by(Gene) %>% dplyr::mutate(`Normalized mRNA expression` = 2^-(Cp_norm-mean(Cp_norm[Condition == "Medium"], na.rm = TRUE))) %>%
+  mutate(Condition2 = factor(replace_na(str_extract(Condition, "Incucyte"), "Not-Incucyte"),
+                             levels = c("Incucyte", "Not-Incucyte"))) %>%
+  group_by(Gene, Condition2) %>% dplyr::mutate(`Normalized mRNA expression` = 2^-(Cp_norm-mean(Cp_norm[str_detect(Condition, "Medium")], na.rm = TRUE))) %>%
+  arrange(Gene, Condition, `Normalized mRNA expression`)
+
+ggplot(data, aes(x = Condition, y = `Normalized mRNA expression`, fill = Condition, col = Condition, shape = Condition2)) +
+  geom_hline(yintercept = 1, linetype = 2) +
+  geom_point(size = 1.75, col = "grey30", stroke = 0.01) +
+  geom_vline(xintercept = nrow(sample.list)/2+0.5, linetype = 2) + 
+  facet_wrap(.~Gene, scales = "free") +
+  scale_shape_manual(values = c("Incucyte" = 21, "Not-Incucyte" = 23)) +
+  scale_fill_manual(values = setNames(rep(hue_pal()(nrow(sample.list)/2), 2), sample.list$Samples)) +
+  theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+                     panel.grid.major.x = element_blank()) +
+  xlab(NULL) + scale_y_continuous(trans = "log2") + #limits = c(0, NA), expand = expansion(mult = c(0.03,0.05)), 
+  guides(fill = guide_legend(override.aes = list(shape = ifelse(str_detect(unique(data$Condition), "Incucyte"), 21, 23))),
+         shape = "none")#guide_legend(override.aes = list(fill = "black")))
+
+ggsave("Output/Natalia-RPTEC3_Log2_Norm2Mediums_TW_16-06-23.pdf", width = 15, height = 5.5)
 
 ```
 

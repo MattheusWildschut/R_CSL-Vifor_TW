@@ -299,31 +299,40 @@ ggsave("Output/KPMP-AKI_CalciumPhosphate_UrineCorrelations.pdf", width = 8.5, he
 ```{r Clinical correlations, fig.width=3.5, fig.height=3.5}
 raw.data4 = fread("Input/72ec8f42-750f-4e1b-bda9-7300d4de1365_20221208_OpenAccessClinicalData.csv")
 
+bins = paste0(0:20, "0-", 0:20, "9")
+
 data = raw.data %>%
   `colnames<-`(str_remove_all(colnames(.), "\\ ")) %>%
   filter(`Sample Type` == "Serum") %>%
   left_join(raw.data4, by = c("Participant ID", "Tissue Type")) %>%
+  filter(`Tissue Type` == "AKI") %>%
   dplyr::mutate(across(contains(c("/dL", "/mL", "/L")), as.numeric),
                 Disease = factor(`Tissue Type`, levels = c("Healthy Reference", "AKI", "CKD")),
                 `Calcium (mg/dL) * Phosphate (mg/dL)` = `Calcium (mg/dL)`*`Phosphate (mg/dL)`,
-                `KDIGO Stage` = str_extract(`KDIGO Stage`, "[:digit:]"))#,
-                # `Baseline eGFR (ml/min/1.73m2) (Binned)` = str_remove_all(`Baseline eGFR (ml/min/1.73m2) (Binned)`,
-                                                                                     # "-.*|\\[|,.*"))
+                `KDIGO Stage` = str_extract(`KDIGO Stage`, "[:digit:]"),
+                `Baseline eGFR (ml/min/1.73m2) (Binned)` = factor(str_replace(`Baseline eGFR (ml/min/1.73m2) (Binned)`, 
+                                                                       "\\[140,150\\)", "140-149"), levels = bins)) %>%
+  group_by(`KDIGO Stage`) %>% add_tally %>% dplyr::mutate(`KDIGO Stage` = paste0(`KDIGO Stage`, " (", n, ")")) %>% select(-n) %>%
+  group_by(`Baseline eGFR (ml/min/1.73m2) (Binned)`) %>% add_tally %>% 
+  dplyr::mutate(`Baseline eGFR (ml/min/1.73m2) (Binned)` = factor(`Baseline eGFR (ml/min/1.73m2) (Binned)`,
+                                                                  levels = `Baseline eGFR (ml/min/1.73m2) (Binned)`,
+                                                                  labels = paste0(`Baseline eGFR (ml/min/1.73m2) (Binned)`, " (", n, ")"))) %>% select(-n) %>%
+  filter(`KDIGO Stage` != "NA (1)")
 
-vars = list("KDIGO Stage")#, "Baseline eGFR (ml/min/1.73m2) (Binned)")
+vars = list("KDIGO Stage") #, "Baseline eGFR (ml/min/1.73m2) (Binned)")
 plot.list = map(vars, function(var){
-  data.plot = data %>% filter(Disease == "AKI")
-  ggplot(data.plot, aes(x = .data[[var]], y = `Calcium (mg/dL) * Phosphate (mg/dL)`, fill = .data[[var]], col = .data[[var]])) +
-    geom_boxplot(alpha = 0.25) +
+  ggplot(data, aes(x = .data[[var]], y = `Calcium (mg/dL) * Phosphate (mg/dL)`, fill = .data[[var]], col = .data[[var]])) +
+    geom_boxplot(alpha = 0.25, outlier.alpha = 0) +
     geom_jitter(alpha = 0.5, width = 0.2, size = 1) +
-    stat_compare_means(comparisons = list(c(2,3)), method = "t.test", method.args = list(var.equal = TRUE), size = 3) +
-    theme_bw()
+    # {if (var == "KDIGO Stage") stat_compare_means(comparisons = list(c(2,3)), size = 3, method = "t.test")} +
+    theme_bw() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + xlab(NULL)
 })
 
-wrap_plots(plot.list) + 
-  plot_annotation("KPMP AKI patients\nBlood CaPi vs Urine markers correlations") &
+wrap_plots(plot.list) + #, widths = c(1,1.75)) + 
+  plot_annotation("KPMP AKI patients") & #\nBlood CaPi vs Clinical parameter correlations") &
   theme(plot.title = element_text(hjust = 0.5))
-# ggsave("Output/KPMP-AKI_CalciumPhosphate_UrineCorrelations.pdf", width = 8.5, height = 8.5)
+# ggsave("Output/KPMP-AKI_CalciumPhosphate_ClinicalCorrelations.pdf", width = 9, height = 3.5)
+ggsave("Output/KPMP-AKI_CalciumPhosphate_KDIGO.pdf", width = 3.5, height = 3.5)
 
 ```
 
