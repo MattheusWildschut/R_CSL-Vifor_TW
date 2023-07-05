@@ -4,7 +4,6 @@ library(shinyFiles)
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = fluidPage(
-  # useShinyjs(),
   titlePanel("Natalia-qPCR_TW"),
   sidebarLayout(
     sidebarPanel(
@@ -14,25 +13,15 @@ ui = fluidPage(
       
       shinyFilesButton("layout_file", label = "Select layout file", title = "Please select layout file", multiple = FALSE,
                        buttonType = "primary"),
-      # verbatimTextOutput('rawInputValue'),
       verbatimTextOutput("layout_filepath"),
       uiOutput("ui.layout")
-      #,
-      #verbatimTextOutput('rawInputValue')
     ),
     mainPanel(
       tabsetPanel(
         tabPanel("Data table", dataTableOutput("data"),
                  uiOutput("ui.download.xlsx")),
-        tabPanel("Plot | Influence medium", uiOutput("medium.ui"),
-                 # put sliders & download button as UI that only shows up when plots is ready?
-                 sliderInput("medium.columns", label = "Select amount of columns", min = 1, max = 10, value = 4),
-                 sliderInput("medium.width", label = "Select width plot", min = 100, max = 900, value = 625, step = 25), 
-                 sliderInput("medium.height", label = "Select height plot", min = 100, max = 900, value = 425, step = 25)),
-        tabPanel("Plot | qPCR data", uiOutput("plot.ui"),
-                 sliderInput("plot.columns", label = "Select amount of columns", min = 1, max = 10, value = 4),
-                 sliderInput("plot.width", label = "Select width plot", min = 100, max = 1500, value = 1250, step = 25), 
-                 sliderInput("plot.height", label = "Select height plot", min = 100, max = 900, value = 500, step = 25))
+        tabPanel("Plot | Influence medium", uiOutput("medium.ui"), uiOutput("medium.ui2")),
+        tabPanel("Plot | qPCR data", uiOutput("plot.ui"), uiOutput("plot.ui2"))
       )
     )
   )
@@ -47,7 +36,6 @@ server = function(input, output, session) {
   shinyFileChoose(input, "layout_file", roots=roots, filetypes=c("", "txt", "csv", "xls", "xlsx"))
   layout_filepath <- reactive(unlist(parseFilePaths(roots, input$layout_file)[,"datapath"]))
   
-  # output$rawInputDataValue <- renderPrint({str(input$data_files)})
   output$data_filepaths = renderText({
     if(is.integer(input$data_files)){
       "Please select data file(s)"
@@ -56,7 +44,6 @@ server = function(input, output, session) {
              paste(paste0(1:length(data_filepaths()), ". ", data_filepaths()), collapse = "\n"))
     }
   })
-  # output$rawInputValue <- renderPrint({str(input$layout_file)})
   output$layout_filepath = renderText({
     if(is.integer(input$layout_file)){
       "Please select layout file"
@@ -90,8 +77,6 @@ server = function(input, output, session) {
                     width = 12)
     )
   })
-  # output$rawInputValue <- renderPrint({str(input$sample_sheet)})
-  
   data = reactive({
     req(!is.integer(input$data_files) & !is.integer(input$layout_file) & !is.null(input$layout_sheet) & !is.null(input$sample_sheet))
     
@@ -155,7 +140,7 @@ server = function(input, output, session) {
       group_by(Gene) %>% dplyr::mutate(Gene2 = factor(Gene, labels = unique(paste0(Gene, " (Ct: ", round(mean(Cp[Condition == "Medium"]),1), ")")))) %>%
       group_by(Gene) %>% dplyr::mutate(mRNA_norm = 2^-(Cp_norm-mean(Cp_norm[Condition == "Medium"], na.rm = TRUE))) %>%
       mutate(Medium = factor(replace_na(str_extract(Condition, "\\+ Cytotox Green"), "Medium"),
-                             levels = c("Medium", "+ Cytotox Green")), #labels = c("Medium", "Medium + Cytotox Green")),
+                             levels = c("Medium", "+ Cytotox Green")),
              Condition2 = factor(str_remove(Condition, " \\(\\+ Cytotox Green\\)"),
                                  levels = unique(str_remove(sample.list$Samples, " \\(\\+ Cytotox Green\\)")))) %>%
       group_by(Gene, Medium) %>% dplyr::mutate(`Normalized mRNA expression` = round(2^-(Cp_norm-mean(Cp_norm[str_detect(Condition, "Medium")], na.rm = TRUE)),2)) %>%
@@ -164,7 +149,7 @@ server = function(input, output, session) {
   output$data = renderDataTable({
     data() %>% dplyr::select(Cell, Well, Gene, Condition, Medium, Cp, Cp_norm, `Normalized mRNA expression`)
   })
-  output$medium = renderPlot({
+  medium_react = reactive({
     data.medium = data() %>% filter(Condition2 == "Medium")
     ggplot(data.medium, aes(x = Condition, y = mRNA_norm, fill = Condition, shape = Medium)) +
       geom_hline(yintercept = 1, linetype = 2) +
@@ -173,14 +158,27 @@ server = function(input, output, session) {
       scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23)) +
       theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                          panel.grid.major.x = element_blank()) +
-      labs(x = NULL, y = "mRNA expression\n(normalized to medium)") + #scale_y_continuous(trans = "log2") + #limits = c(0, NA), expand = expansion(mult = c(0.03,0.05)), 
+      labs(x = NULL, y = "mRNA expression\n(normalized to medium)") +
       guides(fill = guide_legend(override.aes = list(shape = c(21,23))),
              shape = "none")
   })
+  output$medium = renderPlot({
+    medium_react()
+  })
+  output$medium.ui2 = renderUI({
+    req(!is.integer(input$data_files) & !is.integer(input$layout_file), input$layout_sheet, input$sample_sheet)
+    fluidRow(hr(), 
+      column(sliderInput("medium.columns", label = "Select amount of columns", min = 1, max = 10, value = 4), hr(), 
+             downloadBttn("medium.download", label = list(icon("file-pdf"), "Download plot as PDF"), color = "danger", size = "sm"), width = 3),
+      column(sliderInput("medium.width", label = "Select width plot", min = 100, max = 900, value = 625, step = 25), hr(), width = 3),
+      column(sliderInput("medium.height", label = "Select height plot", min = 100, max = 900, value = 425, step = 25), hr(), width = 3)
+    )
+  })
   output$medium.ui = renderUI({
+    req(input$medium.width)
     plotOutput("medium", width = input$medium.width, height = input$medium.height)
   })
-  output$plot = renderPlot({
+  plot_react = reactive({
     req(input$sample_sheet)
     sample.list = readxl::read_excel(layout_filepath(), sheet = input$sample_sheet)
     ggplot(data(), aes(x = Condition, y = `Normalized mRNA expression`, fill = Condition2, shape = Medium)) +
@@ -192,11 +190,24 @@ server = function(input, output, session) {
       scale_fill_discrete(type = c("black", brewer.pal("Paired", n = length(unique(data()$Condition2))-1))) +
       theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                          panel.grid.major.x = element_blank()) +
-      labs(x = NULL, fill = "Condition") + scale_y_continuous(trans = "log2") + #limits = c(0, NA), expand = expansion(mult = c(0.03,0.05)), 
+      labs(x = NULL, fill = "Condition") + scale_y_continuous(trans = "log2") + 
       guides(fill = guide_legend(override.aes = list(shape = 21)),
              shape = guide_legend(override.aes = list(fill = "black")))
   })
+  output$plot = renderPlot({
+    plot_react()
+  })
+  output$plot.ui2 = renderUI({
+    req(!is.integer(input$data_files) & !is.integer(input$layout_file), input$layout_sheet, input$sample_sheet)
+    fluidRow(hr(), 
+      column(sliderInput("plot.columns", label = "Select amount of columns", min = 1, max = 10, value = 4), hr(), 
+             downloadBttn("plot.download", label = list(icon("file-pdf"), "Download plot as PDF"), color = "danger", size = "sm"), width = 3),
+      column(sliderInput("plot.width", label = "Select width plot", min = 150, max = 1500, value = 1250, step = 25), hr(), width = 3),
+      column(sliderInput("plot.height", label = "Select height plot", min = 100, max = 900, value = 500, step = 25), hr(), width = 3)
+    )
+  })
   output$plot.ui = renderUI({
+    req(input$plot.width)
     plotOutput("plot", width = input$plot.width, height = input$plot.height)
   })
   output$ui.download.xlsx = renderUI({
@@ -210,14 +221,22 @@ server = function(input, output, session) {
     content = function(file) {
       wb = createWorkbook()
       addDataFrame(rbind(c("Folder", getwd()),
-                         c("Data file(s)", paste(data_filepaths(), collapse = " | ")),
-                         c("Layout file", layout_filepath()),
-                         c("Layout sheet", input$layout_sheet),
-                         c("Sample sheet", input$sample_sheet)),
+                         c("Data file(s)", paste(data_filepaths(), collapse = " | ")), c("Layout file", layout_filepath()),
+                         c("Layout sheet", input$layout_sheet), c("Sample sheet", input$sample_sheet)),
                    sheet = createSheet(wb, "Metadata"), row.names = FALSE, col.names = FALSE)
       addDataFrame(as.data.frame(data() %>% dplyr::select(Cell, Well, Gene, Condition, Medium, Cp, Cp_norm, `Normalized mRNA expression`)), 
                    sheet = createSheet(wb, "qPCR_Data"), row.names = FALSE)
       saveWorkbook(wb, file)
+  })
+  output$medium.download = downloadHandler(
+    filename = function() { paste0("qPCR-Medium-plot_", Sys.Date(), '.pdf') },
+    content = function(file) {
+      ggsave(file, medium_react(), width = input$medium.width/72, height = input$medium.height/72)
+  })
+  output$plot.download = downloadHandler(
+    filename = function() { paste0("qPCR-plot_", Sys.Date(), '.pdf') },
+    content = function(file) {
+      ggsave(file, plot_react(), width = input$plot.width/72, height = input$plot.height/72)
   })
 }
 
