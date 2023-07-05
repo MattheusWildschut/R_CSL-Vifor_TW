@@ -19,7 +19,7 @@ source("../SourceFile_TW.R")
 
 # RESOLUTE_Mitoferrin-2_Analyses {.tabset}
 
-## Ionomics
+## 1B-C: Ionomics
 ```{r Mitoferrin-2 Ionomics, fig.width=5.5, fig.height=4.5}
 bca = fread("Input/BCA_TW.csv") %>%
   filter(Fraction == "Cytosolic")
@@ -81,7 +81,7 @@ RPA.plot = function(data){
 }
 ```
 
-### HEKiM2 vs HEK-JI-WT comparison
+### 2B: HEKiM2 vs HEK-JI-WT comparison
 
 ```{r HEK-JI-WT comparison, fig.width=4, fig.height=2.4}
 data = RPA.data %>%
@@ -93,7 +93,7 @@ RPA.plot(data) +
 
 ```
 
-### Time course (0-50 minutes)
+### 2C: Time course (0-50 minutes)
 ```{r RPA Time course, fig.width=4.5, fig.height=3}
 data = RPA.data %>%
   filter(Plot == "Timecourse")
@@ -115,7 +115,7 @@ ggplot(data.sum, aes(x = Timepoint, y = Mean, fill = Condition, col = Condition,
 
 ```
 
-### Software comparison
+### 2E: Software comparison
 
 ```{r Software comparison, fig.width=5.5, fig.height=5.25}
 data = RPA.data %>%
@@ -130,7 +130,7 @@ RPA.plot(data) +
 
 ```
 
-### Serum comparison
+### 2F: Serum comparison
 
 ```{r Serum comparison, fig.width=5.5, fig.height=4}
 data = RPA.data %>%
@@ -143,7 +143,22 @@ RPA.plot(data) +
 
 ```
 
-### Passage variability
+### 2F: Serum comparison z' calculation
+
+```{r Serum comparison, fig.width=5.5, fig.height=4}
+data = RPA.data %>%
+  filter(Plot == "Serum")
+
+data2 = data %>%
+  group_by(Serum, Condition, Concentration) %>% dplyr::summarise(Mean = mean(RPA), SD = sd(RPA)) %>%
+  group_by(Serum, Concentration) %>% 
+    dplyr::summarise(Zprime = 1-(3*(SD[Condition == "DOX+"]+SD[Condition == "DOX-"]))/
+                                      abs(Mean[Condition == "DOX+"]-Mean[Condition == "DOX-"]))#,
+  #                                   SD3 = 3*(SD[Condition == "DOX+"]+SD[Condition == "DOX-"]),
+  #                                   MeanDiff = Mean[Condition == "DOX+"]-Mean[Condition == "DOX-"])
+```
+
+### 2G: Passage variability
 
 ```{r Passages comparison, fig.width=5.5, fig.height=2.4}
 data = RPA.data %>%
@@ -155,6 +170,24 @@ RPA.plot(data) +
 # ggsave("Output/RPA_Passages.pdf", width = 5.5, height = 2.4)
 
 ```
+
+### 2G: Passage variability z' calculation
+
+```{r Passages comparison, fig.width=5.5, fig.height=2.4}
+data = RPA.data %>%
+  filter(Plot == "Passages")
+
+data2 = data %>%
+  group_by(Passage, Condition) %>% dplyr::summarise(Mean = mean(RPA), SD = sd(RPA)) %>%
+  group_by(Passage) %>% dplyr::mutate(Zprime = 1-(3*(SD[Condition == "DOX+"]+SD[Condition == "DOX-"]))/
+                                        abs(Mean[Condition == "DOX+"]-Mean[Condition == "DOX-"]),
+                                      SD3 = 3*(SD[Condition == "DOX+"]+SD[Condition == "DOX-"]),
+                                      MeanDiff = Mean[Condition == "DOX+"]-Mean[Condition == "DOX-"])
+
+# ggsave("Output/RPA_Passages.pdf", width = 5.5, height = 2.4)
+
+```
+
 
 ### One function to plot them all
 ```{r RPA function}

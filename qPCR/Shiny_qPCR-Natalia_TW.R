@@ -4,34 +4,44 @@ library(shinyFiles)
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = fluidPage(
-  useShinyjs(),
+  # useShinyjs(),
   titlePanel("Natalia-qPCR_TW"),
-  tabsetPanel(#selected = "Gene_List",
-              tabPanel("Load & process data",
-                       sidebarLayout(
-                         sidebarPanel(
-                           shinyFilesButton("data_files", label = "Select data file(s)", title = "Please select data file(s)", multiple = TRUE),
-                           verbatimTextOutput("data_filepaths"),
-                           
-                           shinyFilesButton("layout_file", label = "Select layout file", title = "Please select layout file", multiple = FALSE),
-                           # verbatimTextOutput('rawInputValue'),
-                           verbatimTextOutput("layout_filepath"),
-                           uiOutput("ui.layout")#,
-                           #verbatimTextOutput('rawInputValue')
-                         ),
-                         mainPanel(
-                           dataTableOutput("data")#,
-                           # dataTableOutput("layout")
-                         )
-                       )
-              )
+  sidebarLayout(
+    sidebarPanel(
+      shinyFilesButton("data_files", label = "Select data file(s)", title = "Please select data file(s)", multiple = TRUE,
+                       buttonType = "success"),
+      verbatimTextOutput("data_filepaths"),
+      
+      shinyFilesButton("layout_file", label = "Select layout file", title = "Please select layout file", multiple = FALSE,
+                       buttonType = "primary"),
+      # verbatimTextOutput('rawInputValue'),
+      verbatimTextOutput("layout_filepath"),
+      uiOutput("ui.layout")
+      #,
+      #verbatimTextOutput('rawInputValue')
+    ),
+    mainPanel(
+      tabsetPanel(
+        tabPanel("Data table", dataTableOutput("data"),
+                 uiOutput("ui.download.xlsx")),
+        tabPanel("Plot | Influence medium", uiOutput("medium.ui"),
+                 # put sliders & download button as UI that only shows up when plots is ready?
+                 sliderInput("medium.columns", label = "Select amount of columns", min = 1, max = 10, value = 4),
+                 sliderInput("medium.width", label = "Select width plot", min = 100, max = 900, value = 625, step = 25), 
+                 sliderInput("medium.height", label = "Select height plot", min = 100, max = 900, value = 425, step = 25)),
+        tabPanel("Plot | qPCR data", uiOutput("plot.ui"),
+                 sliderInput("plot.columns", label = "Select amount of columns", min = 1, max = 10, value = 4),
+                 sliderInput("plot.width", label = "Select width plot", min = 100, max = 1500, value = 1250, step = 25), 
+                 sliderInput("plot.height", label = "Select height plot", min = 100, max = 900, value = 500, step = 25))
+      )
+    )
   )
 )
 
 ## Server ----------------------------------------------------------------------------------------------------------------------------------
 server = function(input, output, session) {
   session$onSessionEnded(function() {stopApp()})
-  roots = c(wd='.')
+  roots = c("Input" = "Input/", Home = "../")
   shinyFileChoose(input, "data_files", roots=roots, filetypes=c("", "txt", "csv", "xls", "xlsx"))
   data_filepaths <- reactive(unlist(parseFilePaths(roots, input$data_files)[,"datapath"]))
   shinyFileChoose(input, "layout_file", roots=roots, filetypes=c("", "txt", "csv", "xls", "xlsx"))
@@ -43,7 +53,7 @@ server = function(input, output, session) {
       "Please select data file(s)"
     } else {
       paste0("Selected data files:\n",
-             paste(paste(1:length(data_filepaths()), data_filepaths()), collapse = "\n"))
+             paste(paste0(1:length(data_filepaths()), ". ", data_filepaths()), collapse = "\n"))
     }
   })
   # output$rawInputValue <- renderPrint({str(input$layout_file)})
@@ -153,6 +163,61 @@ server = function(input, output, session) {
   })
   output$data = renderDataTable({
     data() %>% dplyr::select(Cell, Well, Gene, Condition, Medium, Cp, Cp_norm, `Normalized mRNA expression`)
+  })
+  output$medium = renderPlot({
+    data.medium = data() %>% filter(Condition2 == "Medium")
+    ggplot(data.medium, aes(x = Condition, y = mRNA_norm, fill = Condition, shape = Medium)) +
+      geom_hline(yintercept = 1, linetype = 2) +
+      geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
+      facet_wrap(.~Gene, ncol = input$medium.columns) +
+      scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23)) +
+      theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+                         panel.grid.major.x = element_blank()) +
+      labs(x = NULL, y = "mRNA expression\n(normalized to medium)") + #scale_y_continuous(trans = "log2") + #limits = c(0, NA), expand = expansion(mult = c(0.03,0.05)), 
+      guides(fill = guide_legend(override.aes = list(shape = c(21,23))),
+             shape = "none")
+  })
+  output$medium.ui = renderUI({
+    plotOutput("medium", width = input$medium.width, height = input$medium.height)
+  })
+  output$plot = renderPlot({
+    req(input$sample_sheet)
+    sample.list = readxl::read_excel(layout_filepath(), sheet = input$sample_sheet)
+    ggplot(data(), aes(x = Condition, y = `Normalized mRNA expression`, fill = Condition2, shape = Medium)) +
+      geom_hline(yintercept = 1, linetype = 2) +
+      geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
+      geom_vline(xintercept = nrow(sample.list)/2+0.5, linetype = 2) + 
+      facet_wrap(.~Gene2, scales = "free", ncol = input$plot.columns) +
+      scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23)) +
+      scale_fill_discrete(type = c("black", brewer.pal("Paired", n = length(unique(data()$Condition2))-1))) +
+      theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+                         panel.grid.major.x = element_blank()) +
+      labs(x = NULL, fill = "Condition") + scale_y_continuous(trans = "log2") + #limits = c(0, NA), expand = expansion(mult = c(0.03,0.05)), 
+      guides(fill = guide_legend(override.aes = list(shape = 21)),
+             shape = guide_legend(override.aes = list(fill = "black")))
+  })
+  output$plot.ui = renderUI({
+    plotOutput("plot", width = input$plot.width, height = input$plot.height)
+  })
+  output$ui.download.xlsx = renderUI({
+    req(!is.integer(input$data_files) & !is.integer(input$layout_file), input$layout_sheet, input$sample_sheet)
+    downloadBttn(outputId = "download.xlsx",
+                 label = list(icon("file-excel"), "Download data as .xlsx"),
+                 color = "success", size = "sm")
+  })
+  output$download.xlsx = downloadHandler(
+    filename = function() { paste0('Excel-data_qPCR_', Sys.Date(), '.xlsx') },
+    content = function(file) {
+      wb = createWorkbook()
+      addDataFrame(rbind(c("Folder", getwd()),
+                         c("Data file(s)", paste(data_filepaths(), collapse = " | ")),
+                         c("Layout file", layout_filepath()),
+                         c("Layout sheet", input$layout_sheet),
+                         c("Sample sheet", input$sample_sheet)),
+                   sheet = createSheet(wb, "Metadata"), row.names = FALSE, col.names = FALSE)
+      addDataFrame(as.data.frame(data() %>% dplyr::select(Cell, Well, Gene, Condition, Medium, Cp, Cp_norm, `Normalized mRNA expression`)), 
+                   sheet = createSheet(wb, "qPCR_Data"), row.names = FALSE)
+      saveWorkbook(wb, file)
   })
 }
 
