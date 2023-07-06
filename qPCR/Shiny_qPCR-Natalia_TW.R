@@ -10,7 +10,6 @@ ui = fluidPage(
       shinyFilesButton("data_files", label = "Select data file(s)", title = "Please select data file(s)", multiple = TRUE,
                        buttonType = "success"),
       verbatimTextOutput("data_filepaths"),
-      
       shinyFilesButton("layout_file", label = "Select layout file", title = "Please select layout file", multiple = FALSE,
                        buttonType = "primary"),
       verbatimTextOutput("layout_filepath"),
@@ -59,47 +58,49 @@ server = function(input, output, session) {
     req(!is.integer(input$layout_file))
     data.frame(readxl::excel_sheets(path = layout_filepath()))
   })
+  
+  layout_sheets = reactive(as.list(1:length(data_filepaths())))
   output$ui.layout = renderUI({
     req(!is.integer(input$layout_file))
-    fluidRow(column(radioGroupButtons(inputId = "layout_sheet",
-                                      label = "Select layout sheet",
-                                      choices = readxl::excel_sheets(path = layout_filepath()),
-                                      size = "sm", individual = TRUE, selected = character(0),
-                                      checkIcon = list(yes = icon("circle", class = "fa-solid fa-circle", style = "color: steelblue"),
-                                                       no = icon("circle", class = "fa-regular fa-circle", style = "color: steelblue"))), 
-                    width = 12),
-             column(radioGroupButtons(inputId = "sample_sheet",
+    fluidRow(column(radioGroupButtons(inputId = "sample_sheet",
                                       label = "Select sample list sheet",
                                       choices = readxl::excel_sheets(path = layout_filepath()),
                                       size = "sm", individual = TRUE, selected = character(0),
                                       checkIcon = list(yes = icon("circle", class = "fa-solid fa-circle", style = "color: steelblue"),
                                                        no = icon("circle", class = "fa-regular fa-circle", style = "color: steelblue"))), 
-                    width = 12)
-    )
+                    width = 12),
+             map(layout_sheets(), function(i){
+               column(radioGroupButtons(inputId = paste0("layout_sheet", i),
+                                      label = paste0("Select layout sheet for ", "'", data_filepaths()[i], "'"),
+                                      choices = readxl::excel_sheets(path = layout_filepath()),
+                                      size = "sm", individual = TRUE, selected = character(0),
+                                      checkIcon = list(yes = icon("circle", class = "fa-solid fa-circle", style = "color: steelblue"),
+                                                       no = icon("circle", class = "fa-regular fa-circle", style = "color: steelblue"))), 
+                    width = 12)})
+             )
   })
+  layout_sheets2 = reactive(map(as.list(1:length(data_filepaths())), ~input[[paste0("layout_sheet", .x)]]))
   data = reactive({
-    req(!is.integer(input$data_files) & !is.integer(input$layout_file) & !is.null(input$layout_sheet) & !is.null(input$sample_sheet))
-    
-    raw.data1 = fread(data_filepaths()[1])
-    raw.data2 = fread(data_filepaths()[2])
+    req(!is.integer(input$data_files) & !is.integer(input$layout_file) & !is.null(input$sample_sheet) &
+          all(unlist(map(layout_sheets2(), ~!is.null(.x)))))
 
     sample.list = readxl::read_excel(layout_filepath(), sheet = input$sample_sheet)
-    raw.layout = xlsx::read.xlsx(layout_filepath(), sheetName = input$layout_sheet, header = FALSE)
+    
+    data.comb = map2_dfr(as.list(data_filepaths()), as.list(layout_sheets2()), function(path, sheet){
+      raw.layout = xlsx::read.xlsx(layout_filepath(), sheetName = sheet, header = FALSE) %>%
+        `colnames<-`(paste0(rep(c("", LETTERS), each = length(LETTERS)), LETTERS)[1:ncol(.)])
 
-    layout = raw.layout %>%
-      `colnames<-`(LETTERS[1:ncol(.)]) %>%
-      dplyr::mutate(across(everything(), as.character)) %>%
-      rownames_to_column("Row") %>% pivot_longer(-Row, names_to = "Column", values_to = "Condition") %>%
-      dplyr::mutate(Cell = paste0(Column, Row))
-    layout.genes = raw.layout %>% dplyr::select(1) %>% unlist %>% .[!is.na(.) & . != "Gene"]
-
-    { ## Function to get cell colors out of Excel file
+      layout = raw.layout %>%
+        dplyr::mutate(across(everything(), as.character)) %>%
+        rownames_to_column("Row") %>% pivot_longer(-Row, names_to = "Column", values_to = "Condition") %>%
+        dplyr::mutate(Cell = paste0(Column, Row))
+      layout.genes = raw.layout %>% dplyr::select(1) %>% unlist %>% .[!is.na(.) & . != "Gene"]
+  
       wb     <- loadWorkbook(layout_filepath())
-      sheet1 <- getSheets(wb)[[input$layout_sheet]]
+      sheet1 <- getSheets(wb)[[sheet]]
       styles <- sapply(getCells(getRows(sheet1)), getCellStyle)
 
-      cellColor <- function(style)
-      {
+      cellColor <- function(style){
         fg  <- style$getFillForegroundXSSFColor()
         rgb <- tryCatch(fg$getRgb(), error = function(e) NULL)
         rgb <- paste(rgb, collapse = "")
@@ -111,32 +112,28 @@ server = function(input, output, session) {
                       Column = LETTERS[Column.num],
                       Row = as.numeric(str_extract(Index, "[:digit:]{1,2}(?=\\.)")),
                       Cell = paste0(LETTERS[Column.num], Row)) %>%
-        arrange(Column.num, Row)
+        arrange(Column.num, Row) 
 
-      colors.genes = colors.cells %>% filter(Column.num == 1 & Row != 1) %>%
+      colors.genes = colors.cells %>% filter(Column.num == 1 & Row != 1 & Color != "") %>%
         mutate(Gene = layout.genes) %>%
         dplyr::select(Cell, Gene, Color)
-    }
-
-    layout.function = function(rows, columns){
-      colors.cells %>% filter(Row %in% rows & str_detect(Cell, columns)) %>%
-        mutate(Gene = colors.genes$Gene[match(Color, colors.genes$Color)],
+      
+      colors.cells = colors.cells %>% 
+        filter(Row %in% 2:17 & str_detect(Column, "[C-Z]")) %>%
+        mutate(Gene = factor(colors.genes$Gene[match(Color, colors.genes$Color)], levels = layout.genes),
                Condition.num = layout$Condition[match(Cell, layout$Cell)],
-               Condition = factor(sample.list$Samples[match(Condition.num, sample.list$No)], levels = sample.list$Samples),
+               Condition = factor(sample.list$Samples[match(Condition.num, sample.list$No.)], levels = sample.list$Samples),
                Column.num = Column.num-min(Column.num)+1,
                Row = Row-min(Row)+1,
                Well = paste0(LETTERS[Row], Column.num))
-    }
-
-    data1 = layout.function(rows = 2:17, columns = "[C-Z]") %>%
-      left_join(raw.data1 %>% select(Pos, Cp), by = join_by("Well" == "Pos"))
-    data2 = layout.function(rows = 21:36, columns = "[C-Z]") %>%
-      left_join(raw.data2 %>% select(Pos, Cp), by = join_by("Well" == "Pos"))
-
-    data = rbind.data.frame(data1, data2) %>%
+      
+      left_join(colors.cells, fread(path), by = join_by("Well" == "Pos"))
+    })
+    
+    data = data.comb %>%
       filter(!is.na(Condition) & !Condition %in% c("NTC", "Vehicle")) %>%
       group_by(Condition) %>% dplyr::mutate(Cp_norm = round(Cp-mean(Cp[Gene == "HPRT"], na.rm = TRUE),2)) %>%
-      filter(Gene != "HPRT") %>% mutate(Gene = factor(Gene, levels = layout.genes)) %>% arrange(Gene) %>%
+      filter(Gene != "HPRT") %>% arrange(Gene) %>%
       group_by(Gene) %>% dplyr::mutate(Gene2 = factor(Gene, labels = unique(paste0(Gene, " (Ct: ", round(mean(Cp[Condition == "Medium"]),1), ")")))) %>%
       group_by(Gene) %>% dplyr::mutate(mRNA_norm = 2^-(Cp_norm-mean(Cp_norm[Condition == "Medium"], na.rm = TRUE))) %>%
       mutate(Medium = factor(replace_na(str_extract(Condition, "\\+ Cytotox Green"), "Medium"),
@@ -166,7 +163,8 @@ server = function(input, output, session) {
     medium_react()
   })
   output$medium.ui2 = renderUI({
-    req(!is.integer(input$data_files) & !is.integer(input$layout_file), input$layout_sheet, input$sample_sheet)
+    req(!is.integer(input$data_files) & !is.integer(input$layout_file) &
+          all(unlist(map(layout_sheets2(), ~!is.null(.x)))), input$sample_sheet)
     fluidRow(hr(), 
       column(sliderInput("medium.columns", label = "Select amount of columns", min = 1, max = 10, value = 4), hr(), 
              downloadBttn("medium.download", label = list(icon("file-pdf"), "Download plot as PDF"), color = "danger", size = "sm"), width = 3),
@@ -198,7 +196,8 @@ server = function(input, output, session) {
     plot_react()
   })
   output$plot.ui2 = renderUI({
-    req(!is.integer(input$data_files) & !is.integer(input$layout_file), input$layout_sheet, input$sample_sheet)
+    req(!is.integer(input$data_files) & !is.integer(input$layout_file) &
+          all(unlist(map(layout_sheets2(), ~!is.null(.x)))), input$sample_sheet)
     fluidRow(hr(), 
       column(sliderInput("plot.columns", label = "Select amount of columns", min = 1, max = 10, value = 4), hr(), 
              downloadBttn("plot.download", label = list(icon("file-pdf"), "Download plot as PDF"), color = "danger", size = "sm"), width = 3),
@@ -211,7 +210,8 @@ server = function(input, output, session) {
     plotOutput("plot", width = input$plot.width, height = input$plot.height)
   })
   output$ui.download.xlsx = renderUI({
-    req(!is.integer(input$data_files) & !is.integer(input$layout_file), input$layout_sheet, input$sample_sheet)
+    req(!is.integer(input$data_files) & !is.integer(input$layout_file) &
+          all(unlist(map(layout_sheets2(), ~!is.null(.x)))), input$sample_sheet)
     downloadBttn(outputId = "download.xlsx",
                  label = list(icon("file-excel"), "Download data as .xlsx"),
                  color = "success", size = "sm")
@@ -222,7 +222,7 @@ server = function(input, output, session) {
       wb = createWorkbook()
       addDataFrame(rbind(c("Folder", getwd()),
                          c("Data file(s)", paste(data_filepaths(), collapse = " | ")), c("Layout file", layout_filepath()),
-                         c("Layout sheet", input$layout_sheet), c("Sample sheet", input$sample_sheet)),
+                         c("Layout sheet", paste(layout_sheets2(), collapse = " | ")), c("Sample sheet", input$sample_sheet)),
                    sheet = createSheet(wb, "Metadata"), row.names = FALSE, col.names = FALSE)
       addDataFrame(as.data.frame(data() %>% dplyr::select(Cell, Well, Gene, Condition, Medium, Cp, Cp_norm, `Normalized mRNA expression`)), 
                    sheet = createSheet(wb, "qPCR_Data"), row.names = FALSE)
