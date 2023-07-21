@@ -22,7 +22,7 @@ source("../SourceFile_TW.R")
 
 ### Load data
 ```{r Load data}
-exp.folder = "C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Incucyte/Netosis/Netosis_Exp10/Analyses/"
+exp.folder = "C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Incucyte/Netosis/Netosis_Exp10/CP_Analyses/"
 data.img.raw = fread(paste0(exp.folder, "Netosis-10_Small_Image.csv"))
 data.NET.raw = fread(paste0(exp.folder, "Netosis-10_NET.csv"))
 data.nuc.raw = fread(paste0(exp.folder, "Netosis-10_Nucleus.csv"))
