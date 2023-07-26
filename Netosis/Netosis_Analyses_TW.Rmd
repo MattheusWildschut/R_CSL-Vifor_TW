@@ -47,3 +47,28 @@ ggplotly(ggplot(data.img, aes(x = Timepoint, y = NET_percentage, col = Concentra
   scale_color_viridis_d() + theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)))
 
 ```
+
+## Neural Network analyses
+### First step: get single cell crops around nucleus location
+```{r Single cell crops}
+library(magick)
+crop.size = 50
+objects = data.nuc.raw$ObjectNumber[data.nuc.raw$ImageNumber == 1]
+
+foreach()
+data.nuc = data.nuc.raw %>%
+  `colnames<-`(str_remove(colnames(.), "Metadata_")) %>%
+  select(ImageNumber, ObjectNumber, Experiment, Well, Image, Timepoint, Location_Center_X, Location_Center_Y) %>%
+  mutate(Timepoint = paste0("00d", Timepoint),
+         Filename = paste(Experiment, "Phase", Well, Image, Timepoint, sep = "_"),
+         X = ifelse(Location_Center_X-(crop.size/2) > 0, Location_Center_X-(crop.size/2), 0),
+         Y = ifelse(Location_Center_Y-(crop.size/2) > 0, Location_Center_Y-(crop.size/2), 0))
+
+im = image_read(paste0("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Incucyte/Netosis/Netosis_Exp10/Raw_Images/",
+                       data.nuc$Filename[21], ".tif"))[1]
+im2 = image_crop(im, geometry_area(crop.size, crop.size, data.nuc$X[21], data.nuc$Y[21]))
+image_write(im2, path = paste0("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Incucyte/Netosis/Netosis_Exp10/Cell_Crops/",
+                        data.nuc$Filename[21], "_", data.nuc$ObjectNumber[21], ".tif"), format = "tiff", depth = 16)
+im2
+im
+```
