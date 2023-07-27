@@ -9,9 +9,6 @@ Built with R version `r getRversion()`
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
-```
-
-```{r load packages & functions, include=FALSE}
 setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/Netosis")
 source("../SourceFile_TW.R")
 ```
@@ -53,22 +50,45 @@ ggplotly(ggplot(data.img, aes(x = Timepoint, y = NET_percentage, col = Concentra
 ```{r Single cell crops}
 library(magick)
 crop.size = 50
-objects = data.nuc.raw$ObjectNumber[data.nuc.raw$ImageNumber == 1]
+n.cores <- parallel::detectCores() - 1
+doParallel::registerDoParallel(cl = parallel::makeCluster(n.cores, type = "PSOCK"))
 
-foreach()
 data.nuc = data.nuc.raw %>%
   `colnames<-`(str_remove(colnames(.), "Metadata_")) %>%
   select(ImageNumber, ObjectNumber, Experiment, Well, Image, Timepoint, Location_Center_X, Location_Center_Y) %>%
   mutate(Timepoint = paste0("00d", Timepoint),
          Filename = paste(Experiment, "Phase", Well, Image, Timepoint, sep = "_"),
-         X = ifelse(Location_Center_X-(crop.size/2) > 0, Location_Center_X-(crop.size/2), 0),
-         Y = ifelse(Location_Center_Y-(crop.size/2) > 0, Location_Center_Y-(crop.size/2), 0))
+         Filename2 = paste(Well, Image, Timepoint, sep = "_"),
+         X = Location_Center_X-(crop.size/2),
+         Y = ifelse(Location_Center_Y-(crop.size/2) > 0, Location_Center_Y-(crop.size/2), 0)) %>%
+  # mutate(X = ifelse(X < 0, 0, ifelse(X > 1264-crop.size, 1264-crop.size, X)),
+  #        Y = ifelse(Y < 0, 0, ifelse(Y > 936-crop.size, 936-crop.size, Y)))
+  mutate(Border = X < 0 | X > 1264-crop.size | Y < 0 | Y > 936-crop.size) %>%
+  filter(!Border)
+print(paste0(nrow(data.nuc), "/", nrow(data.nuc.raw), " cells remaining after removal of border cells (", 
+             round((nrow(data.nuc.raw)-nrow(data.nuc))/nrow(data.nuc.raw)*100,1), "% removed)"))
 
-im = image_read(paste0("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Incucyte/Netosis/Netosis_Exp10/Raw_Images/",
-                       data.nuc$Filename[21], ".tif"))[1]
-im2 = image_crop(im, geometry_area(crop.size, crop.size, data.nuc$X[21], data.nuc$Y[21]))
-image_write(im2, path = paste0("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Incucyte/Netosis/Netosis_Exp10/Cell_Crops/",
-                        data.nuc$Filename[21], "_", data.nuc$ObjectNumber[21], ".tif"), format = "tiff", depth = 16)
-im2
-im
+in.folder = "C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Incucyte/Netosis/Netosis_Exp10/Raw_Images/"
+out.folder = "C:/Incucyte/Netosis/Netosis_Exp10/Cell_Crops/"
+# im = image_read(paste0(in.folder, paste(data.nuc$Exp[21], "Phase", data.nuc$Filename2[21], sep = "_"), ".tif"))[1]
+# image_info(im)
+
+# i = images[19]
+# channel = "Phase"
+# a = data.nuc[data.nuc$Filename == data.nuc$Filename[i]]
+
+images = foreach(file = unique(data.nuc$Filename), .combine = c) %do% {which(file == data.nuc$Filename)[1]}
+foreach(i=images[1:19], .packages = "magick") %dopar%{
+  for(channel in c("Green", "Phase", "Red")){
+    filename = paste(data.nuc$Exp[i], channel, data.nuc$Filename2[i], sep = "_")
+    im = image_read(paste0(in.folder, filename, ".tif"))[1]
+    for(object in which(data.nuc$Filename == data.nuc$Filename[i])){
+      im2 = image_crop(im, geometry_area(crop.size, crop.size, data.nuc$X[object], data.nuc$Y[object]))
+      image_write(im2, path = paste0(out.folder, filename, "_", data.nuc$ObjectNumber[object], ".tif"),
+                format = "tiff", depth = 16)
+    }
+  }
+  data.nuc$Filename[i]
+}
+
 ```
