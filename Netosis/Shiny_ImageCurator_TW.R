@@ -29,8 +29,8 @@ ui = fluidPage(
       verbatimTextOutput("folder_path")
     ),
     mainPanel(
-      plotOutput("im"),
-      # imageOutput("im2"),
+      column(width = 6, plotOutput("im")),
+      column(width = 6, imageOutput("im2")),
       dataTableOutput("tab"),
       textOutput("value"),
       textOutput("img.n"),
@@ -105,23 +105,25 @@ server = function(input, output, session) {
     image_ggplot(im) + image_ggplot(im2) + image_ggplot(im3)
   })
   output$im2 = renderImage({
-    # list(src = "C:/Incucyte/Netosis/Netosis_Exp10/Incucyte_Images/Netosis_Exp10_Merged_C10_1_00d08h00m.jpg")
-    # png("C:/Incucyte/Netosis/Netosis_Exp10/Incucyte_Images/Netosis_Exp10_Merged_C10_1_00d08h00m_Annotated.jpg")
-    img = image_read("C:/Incucyte/Netosis/Netosis_Exp10/Incucyte_Images/Netosis_Exp10_Merged_C10_1_00d08h00m.jpg")
+    # img = image_read(paste0("C:/Incucyte/Netosis/Netosis_Exp10/MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc$Filename2[x()], ".jpg"))
+    img = image_read(paste0("C:/Incucyte/Netosis/Netosis_Exp10/MultiChannel_Images/Netosis_Exp10_Merged_", "C10_1_00d08h00m", ".jpg"))
     img2 = image_draw(img)
-    rect(20, 50, 70, 100, border = "white", lty = "dashed", lwd = 3)
-    image_write(img2, "C:/Incucyte/Netosis/Netosis_Exp10/Incucyte_Images/Netosis_Exp10_Merged_C10_1_00d08h00m_Annotated.jpg")
-    # dev.off()
-    list(src = "C:/Incucyte/Netosis/Netosis_Exp10/Incucyte_Images/Netosis_Exp10_Merged_C10_1_00d08h00m_Annotated.jpg")
-  }, deleteFile = FALSE)
+    coord = data.nuc[x(), c("X", "Y")]
+    rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = "white", lty = "dashed", lwd = 3)
+    outfile <- tempfile(fileext='.png')
+    image_write(img2, outfile)
+    list(src = outfile, width = 540,  height = 400)
+  }, deleteFile = TRUE)
 }
 
 ## App ----------------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
 
-
-
-
+img = image_read("C:/Incucyte/Netosis/Netosis_Exp10/Incucyte_Images/Netosis_Exp10_Merged_C10_1_00d08h00m.jpg")
+img2 = image_draw(img)
+coord = data.nuc %>% filter(ObjectNumber == 1 & ImageNumber == 1) %>% select(X, Y)
+rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = "white", lty = "dashed", lwd = 3)
+dev.off()
 
 
 
