@@ -3,6 +3,7 @@ setwd("C:/Incucyte/Netosis/")
 source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
 library(shinyFiles)
 library(magick)
+library(shinyjs)
 
 ## Data Table data.nuc ---------------------------------------------------------------------------------
 exp.folder = "C:/Incucyte/Netosis/Netosis_Exp10/CP_Analyses/"
@@ -22,27 +23,24 @@ data.nuc = data.nuc.raw %>%
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = fluidPage(
+  useShinyjs(),
+  extendShinyjs(text = "shinyjs.closewindow = function() { window.close(); }", functions = "closewindow"),
   titlePanel("Shiny Image Curator_TW"),
   sidebarLayout(
     sidebarPanel(
       shinyDirButton("data_folder", label = "Select folder", title = "Please select folder", buttonType = "success"),
-      verbatimTextOutput("folder_path")
+      verbatimTextOutput("folder_path"),
+      actionBttn(inputId = "save_close", label = "Save & close", style = "unite", color = "success")
     ),
     mainPanel(
       tags$h3("Use buttons to classify cells"),
       fluidRow(column(width = 6, plotOutput("im"),
-                      actionBttn(inputId = "NET", label = "NET", style = "unite", color = "succes"),
+                      actionBttn(inputId = "NET", label = "NET", style = "unite", color = "success"),
                       actionBttn(inputId = "SmallGreen", label = "SmallGreen", style = "unite", color = "primary"),
                       actionBttn(inputId = "Original", label = "Original", style = "unite", color = "royal"),
                       actionBttn(inputId = "FlatCell", label = "FlatCell", style = "unite", color = "danger"),
                       actionBttn(inputId = "NoCell", label = "NoCell", style = "unite", color = "warning")),
                column(width = 6, imageOutput("im2"))),
-      # dataTableOutput("tab"),
-      # textOutput("value"),
-      # textOutput("img.n"),
-      # textOutput("obj.n"),
-      # column(width = 12,
-      #        ),
       hr(style = "border-color: black; color: black;"),
       tags$h3("Adjust display of cell crop images"),
       fluidRow(column(width = 4,
@@ -61,6 +59,11 @@ ui = fluidPage(
 ## Server ----------------------------------------------------------------------------------------------------------------------------------
 server = function(input, output, session) {
   session$onSessionEnded(function() {stopApp()})
+  observeEvent(input$save_close, {
+    write.csv(data.nuc2(), "C:/Incucyte/Netosis/Netosis_Exp10/Netosis_Exp10_Classification.csv")
+    js$closewindow();
+    stopApp()
+  })
   roots = c("Input" = "C:/Incucyte/Netosis/Netosis_Exp10/", Home = "C:/Incucyte/Netosis/")
   shinyDirChoose(input, "data_folder", roots=roots, filetypes=c("", "txt", "csv", "xls", "xlsx"))
   # folder <- reactive(unlist(parseDirPath(roots, input$data_folder)))
@@ -72,9 +75,6 @@ server = function(input, output, session) {
       paste0("Selected data folder:\n", folder())
     }
   })
-  # data.nuc = reactiveVal({
-  #   data.nuc
-  # })
   data.nuc2 = reactiveVal(data.nuc)
   x = reactiveVal(sample(which(is.na(data.nuc$Class)),1))
   img.n = reactive(data.nuc$ImageNumber[x()])
@@ -113,113 +113,15 @@ server = function(input, output, session) {
   })
   output$im2 = renderImage({
     img = image_read(paste0("C:/Incucyte/Netosis/Netosis_Exp10/MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc$Filename2[x()], ".jpg"))
-    # img = image_read(paste0("C:/Incucyte/Netosis/Netosis_Exp10/MultiChannel_Images/Netosis_Exp10_Merged_", "C10_1_00d08h00m", ".jpg"))
     img2 = image_draw(img)
     coord = data.nuc[x(), c("X", "Y")]
     rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = "white", lty = "dashed", lwd = 3)
     outfile <- tempfile(fileext='.png')
     image_write(img2, outfile)
+    dev.off()
     list(src = outfile, width = 540,  height = 400)
   }, deleteFile = TRUE)
 }
 
 ## App ----------------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
-
-# img = image_read("C:/Incucyte/Netosis/Netosis_Exp10/Incucyte_Images/Netosis_Exp10_Merged_C10_1_00d08h00m.jpg")
-# img2 = image_draw(img)
-# coord = data.nuc %>% filter(ObjectNumber == 1 & ImageNumber == 1) %>% select(X, Y)
-# rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = "white", lty = "dashed", lwd = 3)
-# dev.off()
-
-
-
-# im2 = image_read(paste0(folder, "/Netosis-10_Red_C10_1_00d08h00m_", 1, ".tif"))[1]
-# image_normalize(im)
-# im2 = image_level(im2, black_point = 0, white_point = .75, mid_point = .5, channel = "Red")
-# image_ggplot(im2, interpolate = TRUE)
-# image_level(im2, black_point = 0, white_point = 2, mid_point = .5, channel = "Red")
-# 
-# image_colorize(im2, 20, "red")
-# image_fill(im2, "red")
-# 
-# a = image_ggplot(im2)
-# image_ggplot(im2) + scale_fill_viridis()
-# a$scales$scales
-# 
-# im2j = im2 %>% image_write(tempfile(fileext='.jpg'), format = 'jpg')
-# image_read(im2j, channel = "red")
-# 
-# image_draw(im2, pointsize = 2, res = .5)
-# a = as.data.frame(as.integer(im2[[1]]))
-# col_fun = colorRamp2(c(min(a), max(a)), c("black", "red"))
-# red = as_ggplot(grid.grabExpr(draw(Heatmap(as.matrix(as.data.frame(as.integer(im2[[1]]))), col = col_fun, 
-#                                            cluster_rows = FALSE, cluster_columns = FALSE,
-#                                            show_column_names = FALSE, show_heatmap_legend = FALSE))))
-# 
-# as_ggplot(grid.grabExpr(draw(Heatmap(matrix(1:10, ncol =2)))))
-# dev.off()
-# dev.new()
-# 
-# library(EBImage)
-# img = readImage(paste0(folder, "/Netosis-10_Red_C10_1_00d08h00m_", 1, ".tif"))
-# plot_ly(x = 1:50, y = 1:50, z = img@.Data, type="heatmap", colors = colorRamp(c("black", "red")))
-# img = readImage('https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Crab_Nebula.jpg/240px-Crab_Nebula.jpg')
-# volcano
-# 
-# library(ijtiff)
-# img <- array(seq_len(2^3), dim = c(2, 2, 2, 1)) #  2 channel, 1 frame
-# ijtiff_img(img, description = "blah blah")
-# 
-# library(raster)
-# folder = "C:/Incucyte/Netosis/Netosis_Exp10/Cell_Crops"
-# red = brick(raster(paste0(folder, "/Netosis-10_Red_C10_1_00d08h00m_", 1, ".tif")))
-# grayscale_colors <- gray.colors(100,            # number of different color levels 
-#                                 start = 0.0,    # how black (0) to go
-#                                 end = 1.0,      # how white (1) to go
-#                                 gamma = 2.2,    # correction between how a digital 
-#                                 # camera sees the world and how human eyes see it
-#                                 alpha = NULL)   #Null=colors are not transparent
-# plot(red, col = grayscale_colors, axes = FALSE)
-# green = brick(raster(paste0(folder, "/Netosis-10_Green_C10_1_00d08h00m_", 1, ".tif")))
-# phase = brick(raster(paste0(folder, "/Netosis-10_Phase_C10_1_00d08h00m_", 1, ".tif")))
-# plot(red)
-# all = stack(red, green, phase)
-# plotRGB(all, scale = 50000)#, stretch = "lin")
-# 
-# draster = raster(as(cells,"SpatialPixelsDataFrame"))
-# b = brick(draster, 1-draster, 1-draster)
-# plotRGB(b, scale=1)
-# plot(trig, col=NA, border='white', lwd=5, add=T)
-# 
-# 
-# im <- abs(matrix(rnorm(100), 10, 10))
-# mI <- max(im, na.rm=TRUE)
-# rM <- im 
-# rM[is.na(rM)] <- 0
-# colRamp <- colorRamp(c("black", "red"))
-# col <- rgb(colRamp(rM/mI), maxColorValue=255)
-# 
-# p <- matrix(NA, nrow=nrow(im), ncol=ncol(im), byrow=TRUE)
-# 
-# p[,] <- col
-# # 
-# # layout(matrix(c(1,2), nrow=2, ncol=1), heights=c(4,1))
-# # layout.show(2)
-# # par(mar=c(1,1,1,1))
-# # breaks <- seq(min(rM/mI), max(rM/mI),length.out=100)
-# # 
-# plot(NA, type="n", xlim=c(1, ncol(p)), ylim=c(1, nrow(p)),
-#      xlab="", ylab="", xaxs="i", yaxs="i", axes=FALSE, asp=1)
-# rasterImage(as.raster(p), xleft=1, xright=ncol(p), ybottom=1, ytop=nrow(p),
-#             interpolate=TRUE)
-# 
-# par(mar=c(3,1,1,1)) 
-# pal.1=colorRampPalette(c("black", "blue", "green", "yellow", "red", "purple"), space="rgb")
-# image.scale(m3, col=pal.1(length(breaks)-1), breaks=breaks, horiz=TRUE)
-# 
-# img = image_read("C:/Incucyte/Netosis/Netosis_Exp10/Incucyte_Images/Netosis_Exp10_Merged_C10_1_00d08h00m.jpg")
-# img2 = image_draw(img)
-# rect(20, 50, 70, 100, border = "white", lty = "dashed", lwd = 3)
-# dev.off()
-# print(img2)
