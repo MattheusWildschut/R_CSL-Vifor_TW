@@ -68,7 +68,7 @@ data.nuc = data.nuc.raw %>%
 print(paste0(nrow(data.nuc), "/", nrow(data.nuc.raw), " cells remaining after removal of border cells (", 
              round((nrow(data.nuc.raw)-nrow(data.nuc))/nrow(data.nuc.raw)*100,1), "% removed)"))
 
-in.folder = "C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/Incucyte/Netosis/Netosis_Exp10/Raw_Images/"
+in.folder = "C:/Incucyte/Netosis/Netosis_Exp10/Raw_Images/"
 out.folder = "C:/Incucyte/Netosis/Netosis_Exp10/Cell_Crops/"
 # im = image_read(paste0(in.folder, paste(data.nuc$Exp[21], "Phase", data.nuc$Filename2[21], sep = "_"), ".tif"))[1]
 # image_info(im)
@@ -78,7 +78,7 @@ out.folder = "C:/Incucyte/Netosis/Netosis_Exp10/Cell_Crops/"
 # a = data.nuc[data.nuc$Filename == data.nuc$Filename[i]]
 
 images = foreach(file = unique(data.nuc$Filename), .combine = c) %do% {which(file == data.nuc$Filename)[1]}
-foreach(i=images[1:19], .packages = "magick") %dopar%{
+foreach(i=images, .packages = "magick") %dopar%{
   for(channel in c("Green", "Phase", "Red")){
     filename = paste(data.nuc$Exp[i], channel, data.nuc$Filename2[i], sep = "_")
     im = image_read(paste0(in.folder, filename, ".tif"))[1]

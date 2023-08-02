@@ -15,7 +15,7 @@ data.nuc = data.nuc.raw %>%
          Filename = paste(Experiment, "Phase", Well, Image, Timepoint, sep = "_"),
          Filename2 = paste(Well, Image, Timepoint, sep = "_"),
          X = Location_Center_X-(crop.size/2),
-         Y = ifelse(Location_Center_Y-(crop.size/2) > 0, Location_Center_Y-(crop.size/2), 0),
+         Y = Location_Center_Y-(crop.size/2),
          Border = X < 0 | X > 1264-crop.size | Y < 0 | Y > 936-crop.size,
          Class = as.character(NA)) %>%
   filter(!Border)
@@ -29,25 +29,32 @@ ui = fluidPage(
       verbatimTextOutput("folder_path")
     ),
     mainPanel(
-      column(width = 6, plotOutput("im")),
-      column(width = 6, imageOutput("im2")),
-      dataTableOutput("tab"),
-      textOutput("value"),
-      textOutput("img.n"),
-      textOutput("obj.n"),
-      column(width = 4,
-             sliderInput(inputId = "Phase", label = "Phase min/max threshold", min = 0, max = 100, value = c(0,100), step = 1),
-             sliderInput(inputId = "Phase2", label = "Phase midpoint", min = 0, max = 2, value = 1, step = 0.01)),
-      column(width = 4,
-             sliderInput(inputId = "Red", label = "Red min/max threshold", min = 0, max = 2, value = c(0,0.75), step = 0.01),
-             sliderInput(inputId = "Red2", label = "Red midpoint", min = 0, max = 2, value = 0.5, step = 0.01)),
-      column(width = 4,
-             sliderInput(inputId = "Green", label = "Green min/max threshold", min = 0, max = 25, value = c(0,2), step = 0.01),
-             sliderInput(inputId = "Green2", label = "Green midpoint", min = 0, max = 2, value = 0.5, step = 0.01)),
-      # actionBttn(inputId = "Next", label = "Next image", style = "unite", color = "succes"),
-      # actionBttn(inputId = "Previous", label = "Previous image", style = "unite", color = "danger"),
-      actionBttn(inputId = "NET", label = "NET", style = "unite", color = "succes")
-    )
+      tags$h3("Use buttons to classify cells"),
+      fluidRow(column(width = 6, plotOutput("im"),
+                      actionBttn(inputId = "NET", label = "NET", style = "unite", color = "succes"),
+                      actionBttn(inputId = "SmallGreen", label = "SmallGreen", style = "unite", color = "primary"),
+                      actionBttn(inputId = "Original", label = "Original", style = "unite", color = "royal"),
+                      actionBttn(inputId = "FlatCell", label = "FlatCell", style = "unite", color = "danger"),
+                      actionBttn(inputId = "NoCell", label = "NoCell", style = "unite", color = "warning")),
+               column(width = 6, imageOutput("im2"))),
+      # dataTableOutput("tab"),
+      # textOutput("value"),
+      # textOutput("img.n"),
+      # textOutput("obj.n"),
+      # column(width = 12,
+      #        ),
+      hr(style = "border-color: black; color: black;"),
+      tags$h3("Adjust display of cell crop images"),
+      fluidRow(column(width = 4,
+                      sliderInput(inputId = "Phase", label = "Phase min/max threshold", min = 0, max = 100, value = c(0,100), step = 1),
+                      sliderInput(inputId = "Phase2", label = "Phase midpoint", min = 0, max = 2, value = 1, step = 0.01)),
+               column(width = 4,
+                      sliderInput(inputId = "Red", label = "Red min/max threshold", min = 0, max = 2, value = c(0,0.75), step = 0.01),
+                      sliderInput(inputId = "Red2", label = "Red midpoint", min = 0, max = 2, value = 0.5, step = 0.01)),
+               column(width = 4,
+                      sliderInput(inputId = "Green", label = "Green min/max threshold", min = 0, max = 25, value = c(0,2), step = 0.01),
+                      sliderInput(inputId = "Green2", label = "Green midpoint", min = 0, max = 2, value = 0.5, step = 0.01)))
+      )
   )
 )
 
@@ -69,29 +76,29 @@ server = function(input, output, session) {
   #   data.nuc
   # })
   data.nuc2 = reactiveVal(data.nuc)
-  x = reactiveVal(1)
-  img.n = reactiveVal(1)
-  obj.n = reactiveVal(1)
-  observeEvent(input$NET, {
+  x = reactiveVal(sample(which(is.na(data.nuc$Class)),1))
+  img.n = reactive(data.nuc$ImageNumber[x()])
+  obj.n = reactive(data.nuc$ObjectNumber[x()])
+  class = reactiveVal(NA)
+  
+  buttons = reactive(list(input$NET,input$SmallGreen, input$Original, input$FlatCell, input$NoCell))
+  observeEvent(input$NET, {class("NET")})
+  observeEvent(input$SmallGreen, {class("SmallGreen")})
+  observeEvent(input$Original, {class("Original")})
+  observeEvent(input$FlatCell, {class("FlatCell")})
+  observeEvent(input$NoCell, {class("NoCell")})
+  
+  observeEvent(buttons(), {
     data.nuc = data.nuc2()
     data.nuc2(data.nuc %>%
-                mutate(Class = ifelse(ObjectNumber == obj.n() & ImageNumber == img.n(), "NET", Class)))
+                mutate(Class = ifelse(ObjectNumber == obj.n() & ImageNumber == img.n(), class(), Class)))
     x(sample(which(is.na(data.nuc2()$Class)),1))
-    img.n(data.nuc$ImageNumber[x()])
-    obj.n(data.nuc$ObjectNumber[x()])
   })
   output$img.n = renderText(img.n())
   output$obj.n = renderText(obj.n())
   output$tab = renderDataTable({
     data.nuc2()
   })
-  # x = reactiveVal(1)
-  # observeEvent(input$Next, {
-  #   x(x()+1)
-  # })
-  # observeEvent(input$Previous, {
-  #   x(x()-1)
-  # })
   output$value = renderText(x())
   output$im = renderPlot({
     folder = "C:/Incucyte/Netosis/Netosis_Exp10/Cell_Crops"
@@ -105,8 +112,8 @@ server = function(input, output, session) {
     image_ggplot(im) + image_ggplot(im2) + image_ggplot(im3)
   })
   output$im2 = renderImage({
-    # img = image_read(paste0("C:/Incucyte/Netosis/Netosis_Exp10/MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc$Filename2[x()], ".jpg"))
-    img = image_read(paste0("C:/Incucyte/Netosis/Netosis_Exp10/MultiChannel_Images/Netosis_Exp10_Merged_", "C10_1_00d08h00m", ".jpg"))
+    img = image_read(paste0("C:/Incucyte/Netosis/Netosis_Exp10/MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc$Filename2[x()], ".jpg"))
+    # img = image_read(paste0("C:/Incucyte/Netosis/Netosis_Exp10/MultiChannel_Images/Netosis_Exp10_Merged_", "C10_1_00d08h00m", ".jpg"))
     img2 = image_draw(img)
     coord = data.nuc[x(), c("X", "Y")]
     rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = "white", lty = "dashed", lwd = 3)
@@ -119,11 +126,11 @@ server = function(input, output, session) {
 ## App ----------------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
 
-img = image_read("C:/Incucyte/Netosis/Netosis_Exp10/Incucyte_Images/Netosis_Exp10_Merged_C10_1_00d08h00m.jpg")
-img2 = image_draw(img)
-coord = data.nuc %>% filter(ObjectNumber == 1 & ImageNumber == 1) %>% select(X, Y)
-rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = "white", lty = "dashed", lwd = 3)
-dev.off()
+# img = image_read("C:/Incucyte/Netosis/Netosis_Exp10/Incucyte_Images/Netosis_Exp10_Merged_C10_1_00d08h00m.jpg")
+# img2 = image_draw(img)
+# coord = data.nuc %>% filter(ObjectNumber == 1 & ImageNumber == 1) %>% select(X, Y)
+# rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = "white", lty = "dashed", lwd = 3)
+# dev.off()
 
 
 
