@@ -126,22 +126,26 @@ server = function(input, output, session) {
                Column.num = Column.num-min(Column.num)+1,
                Row = Row-min(Row)+1,
                Well = paste0(LETTERS[Row], Column.num))
-      
+      # browser()
       left_join(colors.cells, fread(path), by = join_by("Well" == "Pos"))
+      # browser()
     })
     
     data = data.comb %>%
-      filter(!is.na(Condition) & !Condition %in% c("NTC", "Vehicle")) %>%
+      filter(!is.na(Condition) & !Condition %in% c("NTC", "Vehicle", "Incucyte - Vehicle")) %>%
+      dplyr::mutate(Cp = ifelse(Cp == 40, NA, Cp)) %>%
       group_by(Condition) %>% dplyr::mutate(Cp_norm = round(Cp-mean(Cp[Gene == "HPRT"], na.rm = TRUE),2)) %>%
-      filter(Gene != "HPRT") %>% arrange(Gene) %>%
-      group_by(Gene) %>% dplyr::mutate(Gene2 = factor(Gene, labels = unique(paste0(Gene, " (Ct: ", round(mean(Cp[Condition == "Medium"]),1), ")")))) %>%
+      # filter(Gene != "HPRT") %>% 
+      arrange(Gene) %>%
+      group_by(Gene) %>% dplyr::mutate(Gene2 = factor(Gene, labels = unique(paste0(Gene, " (Ct: ", round(mean(Cp[Condition == "Medium"], na.rm = TRUE),1), ")")))) %>%
       group_by(Gene) %>% dplyr::mutate(mRNA_norm = 2^-(Cp_norm-mean(Cp_norm[Condition == "Medium"], na.rm = TRUE))) %>%
-      mutate(Medium = factor(replace_na(str_extract(Condition, "\\+ Cytotox Green"), "Medium"),
-                             levels = c("Medium", "+ Cytotox Green")),
-             Condition2 = factor(str_remove(Condition, " \\(\\+ Cytotox Green\\)"),
-                                 levels = unique(str_remove(sample.list$Samples, " \\(\\+ Cytotox Green\\)")))) %>%
+      mutate(Medium = factor(replace_na(str_extract(Condition, "\\+ Cytotox Green|Incucyte"), "Medium"),
+                             levels = c("Medium", "+ Cytotox Green", "Incucyte")),
+             Condition2 = factor(str_remove(Condition, " \\(\\+ Cytotox Green\\)|Incucyte - "),
+                                 levels = unique(str_remove(sample.list$Samples, " \\(\\+ Cytotox Green\\)|Incucyte - ")))) %>%
       group_by(Gene, Medium) %>% dplyr::mutate(`Normalized mRNA expression` = round(2^-(Cp_norm-mean(Cp_norm[str_detect(Condition, "Medium")], na.rm = TRUE)),2)) %>%
       arrange(Gene, Condition, `Normalized mRNA expression`)
+    # browser()
   })
   output$data = renderDataTable({
     data() %>% dplyr::select(Cell, Well, Gene, Condition, Medium, Cp, Cp_norm, `Normalized mRNA expression`)
@@ -152,7 +156,7 @@ server = function(input, output, session) {
       geom_hline(yintercept = 1, linetype = 2) +
       geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
       facet_wrap(.~Gene, ncol = input$medium.columns) +
-      scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23)) +
+      scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23, "Incucyte" = 23)) +
       theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                          panel.grid.major.x = element_blank()) +
       labs(x = NULL, y = "mRNA expression\n(normalized to medium)") +
@@ -179,13 +183,14 @@ server = function(input, output, session) {
   plot_react = reactive({
     req(input$sample_sheet)
     sample.list = readxl::read_excel(layout_filepath(), sheet = input$sample_sheet)
-    ggplot(data(), aes(x = Condition, y = `Normalized mRNA expression`, fill = Condition2, shape = Medium)) +
+    plot.data = data() %>% filter(Gene != "HPRT")
+    ggplot(plot.data, aes(x = Condition, y = `Normalized mRNA expression`, fill = Condition2, shape = Medium)) +
       geom_hline(yintercept = 1, linetype = 2) +
       geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
-      geom_vline(xintercept = nrow(sample.list)/2+0.5, linetype = 2) + 
+      geom_vline(xintercept = length(unique(plot.data$Condition))/2+0.5, linetype = 2) + 
       facet_wrap(.~Gene2, scales = "free", ncol = input$plot.columns) +
-      scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23)) +
-      scale_fill_discrete(type = c("black", brewer.pal("Paired", n = length(unique(data()$Condition2))-1))) +
+      scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23, "Incucyte" = 23)) +
+      scale_fill_discrete(type = c("black", brewer.pal("Paired", n = length(unique(plot.data$Condition2))-1))) +
       theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                          panel.grid.major.x = element_blank()) +
       labs(x = NULL, fill = "Condition") + scale_y_continuous(trans = "log2") + 
