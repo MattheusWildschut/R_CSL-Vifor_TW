@@ -28,13 +28,6 @@ ui = fluidPage(
       shinyFilesButton("class", label = "Select class file", title = "Please select class file", multiple = "single",
                        buttonType = "success"),
       verbatimTextOutput("class_path"),
-      # verbatimTextOutput("value"),
-      # verbatimTextOutput("img_n"),
-      # verbatimTextOutput("obj_n"),
-      # verbatimTextOutput("x_list"),
-      
-      # shinyDirButton("data_folder", label = "Select folder", title = "Please select folder", buttonType = "success"),
-      # verbatimTextOutput("folder_path"),
       actionBttn(inputId = "save_close", label = "Save & close", style = "unite", color = "success")
     ),
     mainPanel(
@@ -117,10 +110,6 @@ server = function(input, output, session) {
     img.n(data.nuc2()$ImageNumber[x()])
     obj.n(data.nuc2()$ObjectNumber[x()])
   })
-  # output$value = renderText(x())
-  # output$img_n = renderText(img.n())
-  # output$obj_n = renderText(obj.n())
-  # output$x_list = renderText(paste(unlist(x_list()), collapse = ","))
   
   output$im2 = renderImage({
     req(x())
