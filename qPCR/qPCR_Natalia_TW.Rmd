@@ -166,15 +166,14 @@ ggsave("Output/Natalia-RPTEC3_MediumControl_TW_19-06-23.pdf", width = 6, height 
 ## Poster stuff
 
 ### RPTEC & TERT data Natalia
-```{r Data Natalia, fig.width=6, fig.height=2.5}
+```{r Data Natalia, fig.width=6, fig.height=2.25}
 data.proc = readxl::read_excel("Input/Excel-data_qPCR_2023-07-18.xlsx", sheet = "qPCR_Data") %>%
   filter(!str_detect(Condition, "NTC")) %>%
   mutate(Day = factor(str_extract(Condition, "Day [:digit:]{1,2}"), levels = paste("Day", c(6,7,12,14))),
          CellType = str_extract(Condition, "TERT1 - ATCC|TERT1 - DMEM|TERT1 - Transwell|RPTEC - Donor 1 TW|RPTEC - Donor 2 TW|RPTEC - Donor 1|RPTEC - Donor 2"),
          Day2 = factor(Day, levels = levels(Day), labels = paste("Timepoint", c(1,1,2,2)))) %>%
   group_by(Gene, CellType) %>% dplyr::mutate(Baseline = mean(Cp_norm[Day2 == "Timepoint 1"]),
-                                             FC = 2^-(Cp_norm - Baseline))# %>%
-  # filter(Day2 == "Timepoint 2" & CellType != "TERT1 - Transwell")
+                                             FC = 2^-(Cp_norm - Baseline))
 
 data.sum = data.proc %>%
   group_by(Gene, CellType, Day2) %>% dplyr::summarise(Expression = 2^-mean(Cp_norm),
@@ -188,24 +187,22 @@ data.sum = data.proc %>%
   filter(Day2 == "Timepoint 2" & CellType2 == "Primary RPTEC") %>%
   mutate(Gene = factor(Gene, levels = c("HNF4A", "ACSM2A", "SLC22A6", "CDH1", "CLDN2", "GGT1", "MME")),
          Group = factor(Gene, labels = rep(c("Maturation\nmarkers", "Tight\njunction", "Brush\nborder"), c(3,2,2))))
-  # filter(Gene != "SLC22A6")
 
-ggplot(data.sum, aes(x = Gene, y = CellType, fill = log10(FC))) + #size = Baseline, 
-  # geom_point(shape = 21, col = "grey80") +
+ggplot(data.sum, aes(x = Gene, y = CellType, fill = log10(FC))) +
   geom_tile(col = "grey80") +
-  geom_text(aes(label = round(FC,1)), col = ifelse(data.sum$FC > 3, "white", "black")) +
+  geom_text(aes(label = replace_na(as.character(round(FC,1)), "ND")), 
+            col = ifelse(is.na(data.sum$FC), "black", ifelse(data.sum$FC > 3, "white", "black"))) +
   scale_fill_gradient2(na.value = "grey90", midpoint = 0, labels = ~round(10^.x,1)) +
-  # scale_fill_viridis(na.value = "white") +
   facet_grid(CellType2~Group, scales = "free", space = "free", switch = "y") +
-  theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
-  labs(y = NULL, fill = "Fold change") + scale_y_discrete(limits = rev, position = "right")
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), panel.grid = element_blank()) +
+  labs(x = NULL, y = NULL, fill = "Fold change\n(rel. to Day 6)") + scale_y_discrete(limits = rev, position = "right")
 
-ggsave("Output/Heatmap-Poster_qPCR-Natalia_Horizontal_TW.pdf", width = 6, height = 2.5)
+ggsave("Output/Heatmap-Poster_qPCR-Natalia_Horizontal_TW.png", width = 6, height = 2.25)
 
 ```
 
 ### TERT data Patrick
-```{r TERT data Patrick, fig.width=3.25, fig.height=5}
+```{r TERT data Patrick, fig.width=3.4, fig.height=5.75}
 data = read.csv("Input/mRNA level_normalized to HKG GUSB.csv", check.names = FALSE) %>%
   pivot_longer(cols = -Gene, names_to = "Timepoint") %>%
   mutate(dCt = -log2(value)) %>%
@@ -218,26 +215,25 @@ data = read.csv("Input/mRNA level_normalized to HKG GUSB.csv", check.names = FAL
          Group = factor(Gene, levels = levels(Gene),
                         labels = rep(c("Maturation\nmarkers", "Tight\njunction", "Brush\nborder", "Injury\nmarker"), c(4,2,2,1))))
 
-ggplot(data, aes(x = Timepoint, y = Gene, fill = log10(FC))) + #size = Baseline, 
-  # geom_point(shape = 21, col = "grey80") +
+ggplot(data, aes(x = Timepoint, y = Gene, fill = log10(FC))) +
   geom_tile(col = "grey80") +
   geom_text(aes(label = replace_na(as.character(round(FC,1)), "ND")), 
             col = ifelse(is.na(data$FC), "black", ifelse(data$FC > 3, "white", "black"))) +
   scale_fill_gradient2(na.value = "grey90", midpoint = 0, labels = ~round(10^.x,1)) +
-  # scale_fill_viridis(na.value = "white") +
   facet_grid(Group~., scales = "free_y", space = "free", switch = "y") +
-  theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), panel.grid = element_blank()) +
   labs(x = NULL, y = NULL, fill = "Fold change\n(rel. to Day 2)") + scale_y_discrete(limits = rev, position = "right")
 
-ggsave("Output/Heatmap-Poster_qPCR-Patrick2_TW.png", width = 3.25, height = 5)
+ggsave("Output/Heatmap-Poster_qPCR-Patrick2_TW.png", width = 3.4, height = 5.75)
 
 ```
 
 ### Injury data Natalia
-```{r Injury data Natalia, fig.width=4.75, fig.height=3}
+```{r Injury data Natalia, fig.width=5.5, fig.height=3}
 conditions = c("Medium", "200uM BSA control", "600uM BSA control", "200uM Palmitate-BSA", "600uM Palmitate-BSA")
-genes = c("HAVCR1", "IL6", "CSF3", "CPT1A", "CUBN")
+genes = c("HAVCR1", "CSF3", "IL6", "CPT1A", "CR1", "CFB", "C3AR1")
 data = readxl::read_excel("Input/Excel-data_qPCR-Injury_2023-07-19.xlsx", sheet = "qPCR_Data") %>%
+  rbind.data.frame(readxl::read_excel("Input/Excel-data_qPCR-Complements_2023-08-03.xlsx", sheet = "qPCR_Data")) %>%
   filter(Condition %in% conditions & Gene %in% genes) %>%
   mutate(Condition = factor(Condition, levels = conditions), Gene = factor(Gene, levels = genes))
 data.sum = data %>%
@@ -247,16 +243,18 @@ data.sum = data %>%
   filter(Condition != "Medium")
 
 
-ggplot(data.sum, aes(x = Gene, y = Condition, fill = log10(Expression))) + #size = Baseline, 
-  # geom_point(shape = 21, col = "grey80") +
+ggplot(data.sum, aes(x = Gene, y = Condition, fill = log10(Expression))) +
   geom_tile(col = "grey80") +
   geom_text(aes(label = replace_na(as.character(ifelse(Expression > 99, round(Expression,0), round(Expression,1))), "ND")), 
-            col = ifelse(is.na(data.sum$Expression), "black", ifelse(data.sum$Expression > 3, "white", "black"))) +
-  scale_fill_gradient2(na.value = "grey90", midpoint = 0, labels = ~round(10^.x,1)) +
-  # scale_fill_viridis(na.value = "white") +
+            col = ifelse(is.na(data.sum$Expression), "black", ifelse(data.sum$Expression > 50 | data.sum$Expression < 0.4,
+                                                                     "white", "black"))) +
+  scale_fill_gradientn(colours = c("red4","white","blue4"), 
+                         values = rescale(c(log10(0.1),0,log10(15000))),
+                         guide = "colorbar", limits=c(log10(0.1),log10(15000)), labels = ~round(10^.x,1)) +
   facet_grid(Condition2~., scales = "free", space = "free", switch = "y") +
-  theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), panel.grid = element_blank()) +
   labs(x = NULL, y = NULL, fill = "Fold change\n(rel. to Medium)") + scale_y_discrete(limits = rev, position = "right")
 
-ggsave("Output/Heatmap-Poster_qPCR-InjuryNatalia_TW.png", width = 4.75, height = 3)
+ggsave("Output/Heatmap-Poster_qPCR-InjuryNatalia3_TW.png", width = 5.5, height = 3)
+
 ```

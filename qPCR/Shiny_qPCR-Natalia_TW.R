@@ -1,6 +1,5 @@
 setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/qPCR")
 source("../SourceFile_TW.R")
-library(shinyFiles)
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = fluidPage(
