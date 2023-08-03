@@ -31,8 +31,10 @@ ui = fluidPage(
       actionBttn(inputId = "save_close", label = "Save & close", style = "unite", color = "success")
     ),
     mainPanel(
-      tags$h3("Use buttons to classify cells"),
-      fluidRow(column(width = 10, imageOutput("im2", height = 745),
+      tags$h3("Draw rectangle & double-click to (reset) zoom | Use class buttons for cell classifications"),
+      fluidRow(column(width = 10, imageOutput("im2", height = 745, width = 1000,
+                                              dblclick = "im2_dblclick", 
+                                              brush = brushOpts(id = "im2_brush", resetOnNew = TRUE)),
                       actionBttn(inputId = "NET", label = "NET", style = "unite", color = "success"),
                       actionBttn(inputId = "SmallGreen", label = "SmallGreen", style = "unite", color = "primary"),
                       actionBttn(inputId = "Original", label = "Original", style = "unite", color = "royal"),
@@ -90,10 +92,13 @@ server = function(input, output, session) {
   
   x = reactiveVal(NULL)
   x_list = reactiveVal(list(NULL))
+  brush = reactiveVal(NULL)
+  
   observeEvent(buttons(), {
     data.nuc2(data.nuc2() %>%
                 mutate(Class = ifelse(ObjectNumber == obj.n() & ImageNumber == img.n(), class(), Class)))
     x_list(append(x_list(), x()))
+    brush(NULL)
   }, ignoreInit = TRUE)
   observeEvent(data.nuc2(), {
     x(sample(which(is.na(data.nuc2()$Class)),1))
@@ -111,16 +116,24 @@ server = function(input, output, session) {
     obj.n(data.nuc2()$ObjectNumber[x()])
   })
   
+  observeEvent(input$im2_dblclick, {
+    brush(input$im2_brush)
+  })
   output$im2 = renderImage({
     req(x())
     img = image_read(paste0("MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc$Filename2[x()], ".jpg"))
     img2 = image_draw(img)
     coord = data.nuc[x(), c("X", "Y")]
     rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = "white", lty = "dashed", lwd = 3)
+    img2 = image_resize(img2, "1000x740")
+    if(!is.null(brush())){
+      img2 = image_crop(img2, geometry_area(width = brush()$xmax-brush()$xmin, height = brush()$ymax-brush()$ymin, 
+                                            x_off = brush()$xmin, y_off = brush()$ymin))
+    }
     outfile <- tempfile(fileext='.png')
-    image_write(img2, outfile)
+    image_write(image_resize(img2, "1000x740"), outfile)
     dev.off()
-    list(src = outfile, width = 1000, height = 740)
+    list(src = outfile, width = "auto", height = "auto")
   }, deleteFile = TRUE)
   output$im = renderPlot({
     req(x())
@@ -136,4 +149,3 @@ server = function(input, output, session) {
 
 ## App ----------------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
-
