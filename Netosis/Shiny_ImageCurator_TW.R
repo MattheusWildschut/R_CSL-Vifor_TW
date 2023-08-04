@@ -33,6 +33,14 @@ ui = fluidPage(
                  hr(style = "border-color: black; color: black;"),
                  tableOutput("n_class1"),
                  hr(style = "border-color: black; color: black;"),
+                 searchInput(
+                   inputId = "crop_n",
+                   label = "Select specific cell crop to correct", 
+                   placeholder = "Enter crop number (see 'Classified')",
+                   btnSearch = icon("search"), btnReset = icon("remove")#,
+                   # width = "100%"
+                 ),
+                 hr(style = "border-color: black; color: black;"),
                  actionBttn(inputId = "save_close", style = "unite", color = "success", 
                             label = list(icon("floppy-disk", list("fa-solid", "fa-lg")), "Save & close", icon("circle-xmark", list("fa-solid", "fa-lg"))))
                  ),
@@ -127,6 +135,7 @@ server = function(input, output, session) {
               )
     x_list(append(x_list(), x()))
     brush(NULL)
+    updateSearchInput(session = session, inputId = "crop_n", value = "")
   }, ignoreInit = TRUE)
   observeEvent(data.nuc2(), {
     x(sample(which(is.na(data.nuc2()$Class)),1))
@@ -134,6 +143,9 @@ server = function(input, output, session) {
   observeEvent(input$previous, {
     x(x_list()[[length(x_list())]])
     x_list(x_list()[1:(length(x_list())-1)])
+  })
+  observeEvent(input$crop_n, {
+    x(as.numeric(input$crop_n))
   })
 
   img.n = reactiveVal(NULL)
@@ -188,7 +200,8 @@ server = function(input, output, session) {
     crop.list = map(as.list(idx.class), function(z){
       img.z = image_read(paste0("MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc2()$Filename2[z], ".jpg"))
       crop.z = image_crop(img.z, geometry_area(width = 50, height = 50, x_off = data.nuc2()$X[z], y_off = data.nuc2()$Y[z]))
-      image_ggplot(crop.z)
+      image_ggplot(crop.z) +
+        annotate("label", x = 43, y = 3, label = z, size = 3, hjust = 0.5)
     })
     wrap_plots(crop.list, ncol = 10, nrow = 6)
   })
@@ -201,3 +214,4 @@ server = function(input, output, session) {
 
 ## App ----------------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
+
