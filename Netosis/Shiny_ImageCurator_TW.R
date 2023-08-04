@@ -23,38 +23,63 @@ ui = fluidPage(
   useShinyjs(),
   extendShinyjs(text = "shinyjs.closewindow = function() { window.close(); }", functions = "closewindow"),
   titlePanel("Shiny Image Curator_TW"),
-  sidebarLayout(
-    sidebarPanel(
-      shinyFilesButton("class", label = "Select class file", title = "Please select class file", multiple = "single",
-                       buttonType = "success"),
-      verbatimTextOutput("class_path"),
-      actionBttn(inputId = "save_close", label = "Save & close", style = "unite", color = "success")
+  tabsetPanel(
+    tabPanel("Curation",
+             sidebarLayout(
+               sidebarPanel(
+                 shinyFilesButton("class_file", label = "Select class file", title = "Please select class file", multiple = "single",
+                                  buttonType = "success"),
+                 verbatimTextOutput("class_path"),
+                 hr(style = "border-color: black; color: black;"),
+                 tableOutput("n_class1"),
+                 hr(style = "border-color: black; color: black;"),
+                 actionBttn(inputId = "save_close", style = "unite", color = "success", 
+                            label = list(icon("floppy-disk", list("fa-solid", "fa-lg")), "Save & close", icon("circle-xmark", list("fa-solid", "fa-lg"))))
+                 ),
+               mainPanel(
+                 tags$h3("Draw rectangle & double-click to (reset) zoom | Use class buttons for cell classifications"),
+                 fluidRow(column(width = 10, imageOutput("im2", height = 745, width = 1000,
+                                                         dblclick = "im2_dblclick", 
+                                                         brush = brushOpts(id = "im2_brush", resetOnNew = TRUE)),
+                                 actionBttn(inputId = "NET", label = "NET", style = "unite", color = "success"),
+                                 actionBttn(inputId = "SmallGreen", label = "SmallGreen", style = "unite", color = "primary"),
+                                 actionBttn(inputId = "Original", label = "Original", style = "unite", color = "royal"),
+                                 actionBttn(inputId = "Adherent", label = "Adherent", style = "unite", color = "danger"),
+                                 actionBttn(inputId = "FlatCell", label = "FlatCell", style = "unite", color = "warning"),
+                                 actionBttn(inputId = "NoCell", label = list(icon("xmark"), "NoCell"), style = "unite", color = "default"),
+                                 actionBttn(inputId = "previous", label = list(icon("arrow-rotate-left"), "Go back to previous cell"), style = "unite", color = "danger")),
+                          column(width = 2, plotOutput("im", height = 745))),
+                 hr(style = "border-color: black; color: black;"),
+                 tags$h3("Adjust display of cell crop images"),
+                 fluidRow(column(width = 4,
+                                 sliderInput(inputId = "Phase", label = "Phase min/max threshold", min = 0, max = 100, value = c(0,100), step = 1),
+                                 sliderInput(inputId = "Phase2", label = "Phase midpoint", min = 0, max = 2, value = 1, step = 0.01)),
+                          column(width = 4,
+                                 sliderInput(inputId = "Red", label = "Red min/max threshold", min = 0, max = 2, value = c(0,0.75), step = 0.01),
+                                 sliderInput(inputId = "Red2", label = "Red midpoint", min = 0, max = 2, value = 0.5, step = 0.01)),
+                          column(width = 4,
+                                 sliderInput(inputId = "Green", label = "Green min/max threshold", min = 0, max = 25, value = c(0,5), step = 0.01),
+                                 sliderInput(inputId = "Green2", label = "Green midpoint", min = 0, max = 2, value = 1, step = 0.01)))
+               )
+             )
     ),
-    mainPanel(
-      tags$h3("Draw rectangle & double-click to (reset) zoom | Use class buttons for cell classifications"),
-      fluidRow(column(width = 10, imageOutput("im2", height = 745, width = 1000,
-                                              dblclick = "im2_dblclick", 
-                                              brush = brushOpts(id = "im2_brush", resetOnNew = TRUE)),
-                      actionBttn(inputId = "NET", label = "NET", style = "unite", color = "success"),
-                      actionBttn(inputId = "SmallGreen", label = "SmallGreen", style = "unite", color = "primary"),
-                      actionBttn(inputId = "Original", label = "Original", style = "unite", color = "royal"),
-                      actionBttn(inputId = "Adherent", label = "Adherent", style = "unite", color = "danger"),
-                      actionBttn(inputId = "FlatCell", label = "FlatCell", style = "unite", color = "warning"),
-                      actionBttn(inputId = "NoCell", label = "NoCell", style = "unite", color = "default"),
-                      actionBttn(inputId = "previous", label = "Go back to previous cell", style = "unite", color = "danger")),
-               column(width = 2, plotOutput("im", height = 745))),
-      hr(style = "border-color: black; color: black;"),
-      tags$h3("Adjust display of cell crop images"),
-      fluidRow(column(width = 4,
-                      sliderInput(inputId = "Phase", label = "Phase min/max threshold", min = 0, max = 100, value = c(0,100), step = 1),
-                      sliderInput(inputId = "Phase2", label = "Phase midpoint", min = 0, max = 2, value = 1, step = 0.01)),
-               column(width = 4,
-                      sliderInput(inputId = "Red", label = "Red min/max threshold", min = 0, max = 2, value = c(0,0.75), step = 0.01),
-                      sliderInput(inputId = "Red2", label = "Red midpoint", min = 0, max = 2, value = 0.5, step = 0.01)),
-               column(width = 4,
-                      sliderInput(inputId = "Green", label = "Green min/max threshold", min = 0, max = 25, value = c(0,2), step = 0.01),
-                      sliderInput(inputId = "Green2", label = "Green midpoint", min = 0, max = 2, value = 0.5, step = 0.01)))
-      )
+    tabPanel("Classified",
+             sidebarLayout(
+               sidebarPanel(
+                 radioGroupButtons(inputId = "class",
+                                   label = "Choose class to display classified cell crops",
+                                   choices = c("NET", "SmallGreen", "Original", "Adherent", "FlatCell", "NoCell"),
+                                   justified = TRUE,
+                                   checkIcon = list(yes = icon("circle", list("fa-solid"), style = "color: steelblue"),
+                                                    no = icon("circle", style = "color: steelblue"))),
+                 tableOutput("n_class2")
+               ),
+               mainPanel(
+                 plotOutput("img_class", inline = FALSE, fill = FALSE, width = 1200, height = 720)
+               )
+             )
+             
+    )
   )
 )
 
@@ -68,21 +93,22 @@ server = function(input, output, session) {
     stopApp()
   })
   roots = c("Input" = "Classification", Home = "C:/Incucyte/Netosis/")
-  shinyFileChoose(input, "class", roots=roots, filetypes=c("", "txt", "csv", "xls", "xlsx"))
-  class_path = reactive(unlist(parseFilePaths(roots, input$class)[,"datapath"]))
+  shinyFileChoose(input, "class_file", roots=roots, filetypes=c("", "txt", "csv", "xls", "xlsx"))
+  class_path = reactive(unlist(parseFilePaths(roots, input$class_file)[,"datapath"]))
   output$class_path = renderText({
-    if(is.integer(input$class)){
+    if(is.integer(input$class_file)){
       "Please select class file"
     } else {
       paste0("Selected class file:\n", class_path())
     }
   })
   data.nuc2 = reactiveVal(NULL)
-  observeEvent(req(!is.integer(input$class)),
-    data.nuc2(fread(class_path()))
+  observeEvent(req(!is.integer(input$class_file)),
+    data.nuc2(fread(class_path()) %>%
+      dplyr::mutate(Class = factor(Class, levels = c("NET", "SmallGreen", "Original", "Adherent", "FlatCell", "NoCell"))))
   )
 
-  buttons = reactive(list(input$NET,input$SmallGreen, input$Original, input$Adherent, input$FlatCell, input$NoCell))
+  buttons = reactive(list(input$NET, input$SmallGreen, input$Original, input$Adherent, input$FlatCell, input$NoCell))
   observeEvent(input$NET, {class("NET")})
   observeEvent(input$SmallGreen, {class("SmallGreen")})
   observeEvent(input$Original, {class("Original")})
@@ -96,7 +122,9 @@ server = function(input, output, session) {
   
   observeEvent(buttons(), {
     data.nuc2(data.nuc2() %>%
-                mutate(Class = ifelse(ObjectNumber == obj.n() & ImageNumber == img.n(), class(), Class)))
+                mutate(Class = ifelse(ObjectNumber == obj.n() & ImageNumber == img.n(), class(), as.character(Class))) %>%
+                mutate(Class = factor(Class, levels = c("NET", "SmallGreen", "Original", "Adherent", "FlatCell", "NoCell")))
+              )
     x_list(append(x_list(), x()))
     brush(NULL)
   }, ignoreInit = TRUE)
@@ -121,9 +149,9 @@ server = function(input, output, session) {
   })
   output$im2 = renderImage({
     req(x())
-    img = image_read(paste0("MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc$Filename2[x()], ".jpg"))
+    img = image_read(paste0("MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc2()$Filename2[x()], ".jpg"))
     img2 = image_draw(img)
-    coord = data.nuc[x(), c("X", "Y")]
+    coord = data.nuc2()[x(), c("X", "Y")]
     rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = "white", lty = "dashed", lwd = 3)
     img2 = image_resize(img2, "1000x740")
     if(!is.null(brush())){
@@ -137,14 +165,38 @@ server = function(input, output, session) {
   }, deleteFile = TRUE)
   output$im = renderPlot({
     req(x())
-    im = image_read(paste0("Cell_Crops/Netosis-10_Phase_", data.nuc$Filename2[x()], "_", obj.n(), ".tif"))[1]
-    im2 = image_read(paste0("Cell_Crops/Netosis-10_Red_", data.nuc$Filename2[x()], "_", obj.n(), ".tif"))[1]
-    im3 = image_read(paste0("Cell_Crops/Netosis-10_Green_", data.nuc$Filename2[x()], "_", obj.n(), ".tif"))[1]
+    im = image_read(paste0("Cell_Crops/Netosis-10_Phase_", data.nuc2()$Filename2[x()], "_", obj.n(), ".tif"))[1]
+    im2 = image_read(paste0("Cell_Crops/Netosis-10_Red_", data.nuc2()$Filename2[x()], "_", obj.n(), ".tif"))[1]
+    im3 = image_read(paste0("Cell_Crops/Netosis-10_Green_", data.nuc2()$Filename2[x()], "_", obj.n(), ".tif"))[1]
     im = image_level(im, black_point = input$Phase[1], white_point = input$Phase[2], mid_point = input$Phase2)
     im2 = image_level(im2, black_point = input$Red[1], white_point = input$Red[2], mid_point = input$Red2)
     im3 = image_level(im3, black_point = input$Green[1], white_point = input$Green[2], mid_point = input$Green2)
-    image_ggplot(im) / image_ggplot(im2) / image_ggplot(im3)
+    (image_ggplot(im) + ggtitle("Phase")) / 
+      (image_ggplot(im2) + ggtitle("Red")) / 
+      (image_ggplot(im3) + ggtitle("Green")) & theme(plot.title = element_text(size = 20, hjust = 0.5))
   })
+  output$n_class1 = renderTable({
+    req(data.nuc2())
+    table(data.nuc2()$Class) %>%
+      as.data.frame %>% `colnames<-`(c("Class","Curated crops"))
+  }, striped = TRUE)
+  
+  ## Tab Classified
+  output$img_class = renderPlot({
+    n.class = sum(data.nuc2()$Class == input$class, na.rm = TRUE)
+    idx.class = sample(which(data.nuc2()$Class == input$class), min(60, n.class))
+    crop.list = map(as.list(idx.class), function(z){
+      img.z = image_read(paste0("MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc2()$Filename2[z], ".jpg"))
+      crop.z = image_crop(img.z, geometry_area(width = 50, height = 50, x_off = data.nuc2()$X[z], y_off = data.nuc2()$Y[z]))
+      image_ggplot(crop.z)
+    })
+    wrap_plots(crop.list, ncol = 10, nrow = 6)
+  })
+  output$n_class2 = renderTable({
+    req(data.nuc2())
+    table(data.nuc2()$Class) %>%
+      as.data.frame %>% `colnames<-`(c("Class","Curated crops"))
+  }, striped = TRUE)
 }
 
 ## App ----------------------------------------------------------------------------------------------------------------------------------
