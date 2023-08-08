@@ -7,126 +7,196 @@ output: html_document
 
 ## Library and Setup
 ```{r Library and Setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Incucyte/Netosis/Netosis_Exp10")
 knitr::opts_chunk$set(echo = TRUE)
-suppressPackageStartupMessages({
+suppressWarnings(suppressPackageStartupMessages({
   library(reticulate)
   library(tidyverse) # Data wrangling
   library(imager) # Image manipulation
   library(keras) # Deep learning
   library(caret) # Model Evaluation
-})
+  library(data.table)
+}))
 options(scipen = 999)
 use_condaenv("tf_image")
+folder = "C:/Incucyte/Netosis/Netosis_Exp10/"
 # tensorflow::install_tensorflow(envname = "tf_image", extra_packages = "pillow")
 # py_install("scipy", envname = "tf_image")
 
 ```
 
-## Exploratory Data Analysis
-```{r 1}
-setwd("C:/Incucyte/Netosis/Netosis_Exp10")
+## Store curated image crops
+```{r Store curated image crops}
+data = fread(paste0(folder, "Classification/Netosis_Exp10_Classification_2023-08-07_09-54-14.csv")) %>%
+  filter(!is.na(Class)) %>%
+  group_by(Class) %>% add_tally(name = "Cells") %>% dplyr::slice_sample(n = min(.$Cells[.$Class != "NoCell"]))
 
-# Desired height and width of images
-target_size <- c(64, 64)
+if(!dir.exists(paste0(folder, "TrainingData"))) dir.create(paste0(folder, "TrainingData"))
+walk(as.list(unique(data$Class)), function(class){
+  if(!dir.exists(paste0(folder, "TrainingData/", class))) dir.create(paste0(folder, "TrainingData/", class))
+  data.crops = data %>% filter(Class == class)
+  img.comb = array(dim = c(50,50,3), dimnames = list(NULL, NULL, c("Phase", "Green", "Red")))
+  for(i in 1:nrow(data.crops)){
+    for(channel in c("Phase", "Green", "Red")){
+      # file.copy(from = paste0(folder, "Cell_Crops/Netosis-10_", channel, "_", 
+      #                         data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], ".tif"),
+      #           to = paste0(folder, "TrainingData/", class, "/Netosis-10_", channel, "_", 
+      #                       data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], ".tif"))
+      img.comb[,,channel] = image_to_array(image_load(paste0(folder, "Cell_Crops/Netosis-10_", channel, "_", 
+                                                             data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], ".tif"),
+                                                      color_mode = "grayscale"))
+    }
+    image_array_save(path = paste0(folder, "TrainingData/", class, "/", 
+                                   data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], "-", class, "_", i, ".tif"), 
+                     img = img.comb, scale = FALSE)
+  }
+  print(paste0("Class ", class, ": ", nrow(data.crops), " images saved"))
+})
 
-# Batch size for training the model
-batch_size <- 32
+```
 
-# Image Generator
-train_data_gen <- image_data_generator(rescale = 1/255, # Scaling pixel value
+<!-- ## Load seperate channel images into single array -->
+<!-- ```{r Channels} -->
+<!-- img = image_load("C:/Incucyte/Netosis/Netosis_Exp10/TrainingData/Adherent/Netosis-10_Red_C1_2_00d02h00m_114.tif", -->
+<!--                  color_mode = "grayscale") -->
+<!-- img = image_load(paste0(folder, "MergedData/", class, "/Trial", i, ".tif"), color_mode = "grayscale") -->
+<!-- y <- image_to_array(img) -->
+<!-- x[,,3] -->
+<!-- y[,,2] -->
+<!-- y = abind::abind(x, x, along = 3) -->
+
+<!-- ``` -->
+
+## Data preprocessing
+```{r Data preprocessing}
+# setwd("C:/Incucyte/Netosis/Netosis_Exp10")
+target_size <- c(50, 50) # Desired height and width of images
+batch_size <- 16 # Batch size for training the model
+
+train_data_gen <- image_data_generator(featurewise_center = TRUE,
+                                       featurewise_std_normalization = TRUE,
+                                       # samplewise_center = TRUE,
+                                       # samplewise_std_normalization = TRUE,
                                        horizontal_flip = T, # Flip image horizontally
-                                       vertical_flip = T, # Flip image vertically 
+                                       vertical_flip = T, # Flip image vertically
                                        rotation_range = 45, # Rotate image from 0 to 45 degrees
-                                       zoom_range = 0.25, # Zoom in or zoom out range
                                        validation_split = 0.2) # 20% data as validation data
-
-# Training Dataset
-train_image_array_gen <- flow_images_from_directory(directory = "data/train/", # Folder of the data
-                                                    target_size = target_size, # target of the image dimension (64 x 64)
+train_image_array_gen <- flow_images_from_directory(directory = paste0(folder, "Trainingdata/"), # Data folder
+                                                    target_size = target_size, # target of the image dimension
                                                     color_mode = "rgb", # use RGB color
                                                     batch_size = batch_size , 
                                                     seed = 123,  # set random seed
-                                                    subset = "training", # declare that this is for training data
+                                                    subset = "training", # declare that this is training data
                                                     generator = train_data_gen)
-
-# Validation Dataset
-val_image_array_gen <- flow_images_from_directory(directory = "data/train/",
+val_image_array_gen <- flow_images_from_directory(directory = paste0(folder, "Trainingdata/"),
                                                   target_size = target_size, 
                                                   color_mode = "rgb", 
                                                   batch_size = batch_size ,
                                                   seed = 123,
-                                                  subset = "validation", # declare that this is the validation data
+                                                  subset = "validation", # declare that this is validation data
                                                   generator = train_data_gen)
 
-# Number of training samples
-train_samples <- train_image_array_gen$n
-
-# Number of validation samples
-valid_samples <- val_image_array_gen$n
-
-# Number of target classes/categories
-output_n <- n_distinct(train_image_array_gen$classes)
-
-# Get the class proportion
-table("\nFrequency" = factor(train_image_array_gen$classes)) %>% 
-  prop.table()
-
-## Model Architecture -----------------------------------------
-# Set Initial Random Weight
-tensorflow::tf$random$set_seed(123)
-
-model <- keras_model_sequential(name = "simple_model") %>% 
-  
-  # Convolution Layer
-  layer_conv_2d(filters = 16,
-                kernel_size = c(3,3),
-                padding = "same",
-                activation = "relu",
-                input_shape = c(target_size, 3) 
-  ) %>% 
-  
-  # Max Pooling Layer
-  layer_max_pooling_2d(pool_size = c(2,2)) %>% 
-  
-  # Flattening Layer
-  layer_flatten() %>% 
-  
-  # Dense Layer
-  layer_dense(units = 16,
-              activation = "relu") %>% 
-  
-  # Output Layer
-  layer_dense(units = output_n,
-              activation = "softmax",
-              name = "Output")
-
-model
-
-## Model fitting -------------------------
-model %>% 
-  compile(
-    loss = "categorical_crossentropy",
-    optimizer = optimizer_adam(learning_rate = 0.01),
-    metrics = "accuracy"
-  )
+train_samples <- train_image_array_gen$n # Number of training samples
+valid_samples <- val_image_array_gen$n # Number of validation samples
+output_n <- n_distinct(train_image_array_gen$classes) # Number of target classes/categories
+table("\nFrequency" = factor(train_image_array_gen$classes)) %>% prop.table() # Get the class proportion
 
 ```
 
-```{r 2}
-# Fit data into model
-history <- model %>% 
-  fit(
-    # training data
-    train_image_array_gen,
-    
-    # training epochs
-    steps_per_epoch = as.integer(train_samples / batch_size), 
-    epochs = 30, 
-    
-    # validation data
-    validation_data = val_image_array_gen,
-    validation_steps = as.integer(valid_samples / batch_size)
-  )
+## Model Architecture
+```{r Model Architecture}
+tensorflow::tf$random$set_seed(123) # Set Initial Random Weight
+
+model <- keras_model_sequential(name = "simple_model") %>% 
+  layer_conv_2d(filters = 16, kernel_size = c(3,3), padding = "same", activation = "relu",  # Convolution Layer
+                input_shape = c(target_size, 3)) %>% 
+  layer_max_pooling_2d(pool_size = c(2,2)) %>%# Max Pooling Layer
+  layer_flatten() %>% # Flattening Layer
+  layer_dense(units = 16, activation = "relu") %>% # Dense Layer
+  layer_dense(units = output_n, activation = "softmax", name = "Output") # Output Layer
+summary(model)
+```
+## Big model
+```{r Big model}
+tensorflow::tf$random$set_seed(123)
+
+model_big <- keras_model_sequential() %>% 
+  
+  # First convolutional layer
+  layer_conv_2d(filters = 32,
+                kernel_size = c(5,5), # 5 x 5 filters
+                padding = "same",
+                activation = "relu",
+                input_shape = c(target_size, 3)
+                ) %>% 
+  
+  # Second convolutional layer
+  layer_conv_2d(filters = 32,
+                kernel_size = c(3,3), # 3 x 3 filters
+                padding = "same",
+                activation = "relu"
+                ) %>% 
+  
+  # Max pooling layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>% 
+  
+  # Third convolutional layer
+  layer_conv_2d(filters = 64,
+                kernel_size = c(3,3),
+                padding = "same",
+                activation = "relu"
+                ) %>% 
+
+  # Max pooling layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>% 
+  
+  # Fourth convolutional layer
+  layer_conv_2d(filters = 128,
+                kernel_size = c(3,3),
+                padding = "same",
+                activation = "relu"
+                ) %>% 
+  
+  # Max pooling layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>% 
+
+  # Fifth convolutional layer
+  layer_conv_2d(filters = 256,
+                kernel_size = c(3,3),
+                padding = "same",
+                activation = "relu"
+                ) %>% 
+  
+  # Max pooling layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>% 
+  
+  # Flattening layer
+  layer_flatten() %>% 
+  
+  # Dense layer
+  layer_dense(units = 64,
+              activation = "relu") %>% 
+  
+  # Output layer
+  layer_dense(name = "Output",
+              units = 6, 
+              activation = "softmax")
+
+model_big
+
+```
+
+## Model fitting
+```{r Model fitting}
+model_big %>% 
+  compile(loss = "categorical_crossentropy",
+          optimizer = optimizer_adam(learning_rate = 0.001),
+          metrics = "accuracy")
+
+history <- model_big %>% 
+  fit(train_image_array_gen, 
+      steps_per_epoch = as.integer(train_samples / batch_size), epochs = 1000, 
+      validation_data = val_image_array_gen, validation_steps = as.integer(valid_samples / batch_size))
 plot(history)
 
 ```
