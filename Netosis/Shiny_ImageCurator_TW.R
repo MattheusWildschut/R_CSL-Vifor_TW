@@ -1,22 +1,23 @@
 ## Shiny Image Curator
-setwd("C:/Incucyte/Netosis/Netosis_Exp10/")
+setwd("C:/Incucyte/Netosis/Netosis_Exp13/")
 source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
 
 ## Data Table data.nuc ---------------------------------------------------------------------------------
-# crop.size = 50
+crop.size = 50
 # data.nuc.raw = fread("CP_Analyses/Netosis-10_Nucleus.csv")
-# data.nuc = data.nuc.raw %>%
-#   `colnames<-`(str_remove(colnames(.), "Metadata_")) %>%
-#   dplyr::select(ImageNumber, ObjectNumber, Experiment, Well, Image, Timepoint, Location_Center_X, Location_Center_Y) %>%
-#   mutate(Timepoint = paste0("00d", Timepoint),
-#          Filename = paste(Experiment, "Phase", Well, Image, Timepoint, sep = "_"),
-#          Filename2 = paste(Well, Image, Timepoint, sep = "_"),
-#          X = Location_Center_X-(crop.size/2),
-#          Y = Location_Center_Y-(crop.size/2),
-#          Border = X < 0 | X > 1264-crop.size | Y < 0 | Y > 936-crop.size,
-#          Class = as.character(NA)) %>%
-#   filter(!Border & Timepoint != "00d06h00m")
-# write.csv(data.nuc, "Classification/Netosis_Exp10_Classification.csv")
+data.nuc.raw = fread("CellProfiler/Netosis_Exp13_Nucleus.csv")
+data.nuc = data.nuc.raw %>%
+  `colnames<-`(str_remove(colnames(.), "Metadata_")) %>%
+  dplyr::select(ImageNumber, ObjectNumber, Experiment, Well, Image, Timepoint, Location_Center_X, Location_Center_Y) %>%
+  mutate(Timepoint = paste0("00d", Timepoint),
+         Filename = paste(Experiment, "Phase", Well, Image, Timepoint, sep = "_"),
+         Filename2 = paste(Well, Image, Timepoint, sep = "_"),
+         X = Location_Center_X-(crop.size/2),
+         Y = Location_Center_Y-(crop.size/2),
+         Border = X < 0 | X > 1264-crop.size | Y < 0 | Y > 936-crop.size,
+         Class = as.character(NA)) %>%
+  filter(!Border & Timepoint != "00d06h00m")
+write.csv(data.nuc, "Classification/Netosis_Exp10_Classification.csv")
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = fluidPage(
@@ -176,7 +177,7 @@ server = function(input, output, session) {
     list(src = outfile, width = "auto", height = "auto")
   }, deleteFile = TRUE)
   output$im = renderPlot({
-    req(x())
+    req(x(), ojb.n(), img.n())
     im = image_read(paste0("Cell_Crops/Netosis-10_Phase_", data.nuc2()$Filename2[x()], "_", obj.n(), ".tif"))[1]
     im2 = image_read(paste0("Cell_Crops/Netosis-10_Red_", data.nuc2()$Filename2[x()], "_", obj.n(), ".tif"))[1]
     im3 = image_read(paste0("Cell_Crops/Netosis-10_Green_", data.nuc2()$Filename2[x()], "_", obj.n(), ".tif"))[1]

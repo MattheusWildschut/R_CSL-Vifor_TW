@@ -1,0 +1,132 @@
+---
+title: "R-Python_DNN"
+author: "Thijs (Mattheus) Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## Library and Setup
+```{r Library and Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+suppressPackageStartupMessages({
+  library(reticulate)
+  library(tidyverse) # Data wrangling
+  library(imager) # Image manipulation
+  library(keras) # Deep learning
+  library(caret) # Model Evaluation
+})
+options(scipen = 999)
+use_condaenv("tf_image")
+# tensorflow::install_tensorflow(envname = "tf_image", extra_packages = "pillow")
+# py_install("scipy", envname = "tf_image")
+
+```
+
+## Exploratory Data Analysis
+```{r 1}
+setwd("C:/Incucyte/Netosis/Netosis_Exp10")
+
+# Desired height and width of images
+target_size <- c(64, 64)
+
+# Batch size for training the model
+batch_size <- 32
+
+# Image Generator
+train_data_gen <- image_data_generator(rescale = 1/255, # Scaling pixel value
+                                       horizontal_flip = T, # Flip image horizontally
+                                       vertical_flip = T, # Flip image vertically 
+                                       rotation_range = 45, # Rotate image from 0 to 45 degrees
+                                       zoom_range = 0.25, # Zoom in or zoom out range
+                                       validation_split = 0.2) # 20% data as validation data
+
+# Training Dataset
+train_image_array_gen <- flow_images_from_directory(directory = "data/train/", # Folder of the data
+                                                    target_size = target_size, # target of the image dimension (64 x 64)
+                                                    color_mode = "rgb", # use RGB color
+                                                    batch_size = batch_size , 
+                                                    seed = 123,  # set random seed
+                                                    subset = "training", # declare that this is for training data
+                                                    generator = train_data_gen)
+
+# Validation Dataset
+val_image_array_gen <- flow_images_from_directory(directory = "data/train/",
+                                                  target_size = target_size, 
+                                                  color_mode = "rgb", 
+                                                  batch_size = batch_size ,
+                                                  seed = 123,
+                                                  subset = "validation", # declare that this is the validation data
+                                                  generator = train_data_gen)
+
+# Number of training samples
+train_samples <- train_image_array_gen$n
+
+# Number of validation samples
+valid_samples <- val_image_array_gen$n
+
+# Number of target classes/categories
+output_n <- n_distinct(train_image_array_gen$classes)
+
+# Get the class proportion
+table("\nFrequency" = factor(train_image_array_gen$classes)) %>% 
+  prop.table()
+
+## Model Architecture -----------------------------------------
+# Set Initial Random Weight
+tensorflow::tf$random$set_seed(123)
+
+model <- keras_model_sequential(name = "simple_model") %>% 
+  
+  # Convolution Layer
+  layer_conv_2d(filters = 16,
+                kernel_size = c(3,3),
+                padding = "same",
+                activation = "relu",
+                input_shape = c(target_size, 3) 
+  ) %>% 
+  
+  # Max Pooling Layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>% 
+  
+  # Flattening Layer
+  layer_flatten() %>% 
+  
+  # Dense Layer
+  layer_dense(units = 16,
+              activation = "relu") %>% 
+  
+  # Output Layer
+  layer_dense(units = output_n,
+              activation = "softmax",
+              name = "Output")
+
+model
+
+## Model fitting -------------------------
+model %>% 
+  compile(
+    loss = "categorical_crossentropy",
+    optimizer = optimizer_adam(learning_rate = 0.01),
+    metrics = "accuracy"
+  )
+
+```
+
+```{r 2}
+# Fit data into model
+history <- model %>% 
+  fit(
+    # training data
+    train_image_array_gen,
+    
+    # training epochs
+    steps_per_epoch = as.integer(train_samples / batch_size), 
+    epochs = 30, 
+    
+    # validation data
+    validation_data = val_image_array_gen,
+    validation_steps = as.integer(valid_samples / batch_size)
+  )
+plot(history)
+
+```
