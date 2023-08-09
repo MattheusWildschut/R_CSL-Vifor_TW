@@ -1,0 +1,71 @@
+---
+title: "Netosis_Analyses_TW"
+author: "Thijs (Mattheus) Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Built with R version `r getRversion()`
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/Netosis")
+source("../SourceFile_TW.R")
+library(magick)
+```
+
+## Preprocess CellProfiler nuclear detection
+```{r Preprocess CellProfiler nuclear detection}
+crop.size = 50
+folder = "C:/Incucyte/Netosis/Netosis_Exp13/"
+raw.file = "CellProfiler/Netosis_Exp13_RedOnly2_Nucleus.csv"
+filename = "Classification/Netosis_Exp13_RedOnly2_Classification"
+
+if(!file.exists(paste0(folder, filename, ".csv"))){
+  data.nuc.raw = fread(paste0(folder, raw.file))
+  data.nuc = data.nuc.raw %>%
+    `colnames<-`(str_remove(colnames(.), "Metadata_")) %>%
+    mutate(File = FileName_Red,
+           Well = str_extract(File, "(?<=Red_)[A-H][:digit:]{1,2}"),
+           Image = str_extract(File, "[:digit:](?=_[:digit:]{2}d[:digit:]{2}h[:digit:]{2}m)"),
+           Timepoint = str_extract(File, "[:digit:]{2}d[:digit:]{2}h[:digit:]{2}m"),
+           Experiment = paste0("Netosis_Exp", Experiment)) %>%
+    dplyr::select(ImageNumber, ObjectNumber, Experiment, Well, Image, Timepoint, Location_Center_X, Location_Center_Y) %>%
+    mutate(Filename2 = paste(Well, Image, Timepoint, sep = "_"),
+           X = Location_Center_X-(crop.size/2),
+           Y = Location_Center_Y-(crop.size/2),
+           Border = X < 0 | X > 1264-crop.size | Y < 0 | Y > 936-crop.size,
+           Class = as.character(NA)) %>%
+    # rownames_to_column("z") %>%
+    filter(!Border)# & Timepoint != "00d06h00m")
+  
+  write.csv(data.nuc, paste0(folder, filename, ".csv"))
+} else {
+  data.nuc = fread(paste0(folder, filename, ".csv"))
+}
+```
+
+<!-- ## Generate single-cell crops -->
+<!-- ### Utilize parallel computing across multiple CPUs -->
+<!-- ```{r Generate single-cell crops} -->
+<!-- n.cores <- parallel::detectCores() - 1 -->
+<!-- doParallel::registerDoParallel(cl = parallel::makeCluster(n.cores, type = "PSOCK")) -->
+
+<!-- in.folder = paste0(folder, "Raw_Images/") -->
+<!-- out.folder = paste0(folder, "Cell_Crops/") -->
+
+<!-- images = foreach(file = unique(data.nuc$Filename2), .combine = c) %do% {which(file == data.nuc$Filename2)[1]} -->
+<!-- foreach(i=images, .packages = "magick") %dopar%{ -->
+<!--   for(channel in c("Green", "Phase", "Red")){ -->
+<!--     filename = paste(data.nuc$Experiment[i], channel, data.nuc$Filename2[i], sep = "_") -->
+<!--     im = image_read(paste0(in.folder, filename, ".png"))[1] -->
+<!--     for(object in which(data.nuc$Filename2 == data.nuc$Filename2[i])){ -->
+<!--       im2 = image_crop(im, geometry_area(crop.size, crop.size, data.nuc$X[object], data.nuc$Y[object])) -->
+<!--       image_write(im2, path = paste0(out.folder, filename, "_", data.nuc$ObjectNumber[object], ".png"), -->
+<!--                 format = "tiff", depth = 16) -->
+<!--     } -->
+<!--   } -->
+<!--   data.nuc$Filename2[i] -->
+<!-- } -->
+
+<!-- ``` -->

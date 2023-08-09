@@ -16,6 +16,7 @@ suppressWarnings(suppressPackageStartupMessages({
   library(keras) # Deep learning
   library(caret) # Model Evaluation
   library(data.table)
+  library(foreach)
 }))
 options(scipen = 999)
 use_condaenv("tf_image")
@@ -31,6 +32,34 @@ data = fread(paste0(folder, "Classification/Netosis_Exp10_Classification_2023-08
   filter(!is.na(Class)) %>%
   group_by(Class) %>% add_tally(name = "Cells") %>% dplyr::slice_sample(n = min(.$Cells[.$Class != "NoCell"]))
 
+n.cores <- parallel::detectCores() - 1
+doSNOW::registerDoSNOW(cl = snow::makeSOCKcluster(n.cores))
+
+in.folder = paste0(folder, "Raw_Images/")
+out.folder = paste0(folder, "Cell_Crops2/")
+if(!dir.exists(out.folder)) dir.create(out.folder)
+crop.size = 50
+
+progress <- function(n) setTxtProgressBar(txtProgressBar(max = length(unique(data$Filename2)), style = 3), n)
+opts <- list(progress = progress)
+
+images = foreach(file = unique(data$Filename2), .combine = c) %do% {which(file == data$Filename2)[1]}
+invisible(foreach(i=images, .packages = "magick", .options.snow = opts) %dopar%{
+  for(channel in c("Green", "Phase", "Red")){
+    filename = paste(data$Experiment[i], channel, data$Filename2[i], sep = "_")
+    im = image_read(paste0(in.folder, filename, ".tif"))[1]
+    for(object in which(data$Filename2 == data$Filename2[i])){
+      im2 = image_crop(im, geometry_area(crop.size, crop.size, data$X[object], data$Y[object]))
+      image_write(im2, path = paste0(out.folder, filename, "_", data$ObjectNumber[object], ".png"),
+                format = "tiff", depth = 16)
+    }
+  }
+})
+
+```
+
+## Merge channels & organize in folders by class
+```{r Merge channels & class folders}
 if(!dir.exists(paste0(folder, "TrainingData"))) dir.create(paste0(folder, "TrainingData"))
 walk(as.list(unique(data$Class)), function(class){
   if(!dir.exists(paste0(folder, "TrainingData/", class))) dir.create(paste0(folder, "TrainingData/", class))
@@ -38,10 +67,6 @@ walk(as.list(unique(data$Class)), function(class){
   img.comb = array(dim = c(50,50,3), dimnames = list(NULL, NULL, c("Phase", "Green", "Red")))
   for(i in 1:nrow(data.crops)){
     for(channel in c("Phase", "Green", "Red")){
-      # file.copy(from = paste0(folder, "Cell_Crops/Netosis-10_", channel, "_", 
-      #                         data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], ".tif"),
-      #           to = paste0(folder, "TrainingData/", class, "/Netosis-10_", channel, "_", 
-      #                       data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], ".tif"))
       img.comb[,,channel] = image_to_array(image_load(paste0(folder, "Cell_Crops/Netosis-10_", channel, "_", 
                                                              data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], ".tif"),
                                                       color_mode = "grayscale"))

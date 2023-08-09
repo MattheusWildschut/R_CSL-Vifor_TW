@@ -1,23 +1,5 @@
 ## Shiny Image Curator
-setwd("C:/Incucyte/Netosis/Netosis_Exp13/")
 source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
-
-## Data Table data.nuc ---------------------------------------------------------------------------------
-crop.size = 50
-# data.nuc.raw = fread("CP_Analyses/Netosis-10_Nucleus.csv")
-data.nuc.raw = fread("CellProfiler/Netosis_Exp13_Nucleus.csv")
-data.nuc = data.nuc.raw %>%
-  `colnames<-`(str_remove(colnames(.), "Metadata_")) %>%
-  dplyr::select(ImageNumber, ObjectNumber, Experiment, Well, Image, Timepoint, Location_Center_X, Location_Center_Y) %>%
-  mutate(Timepoint = paste0("00d", Timepoint),
-         Filename = paste(Experiment, "Phase", Well, Image, Timepoint, sep = "_"),
-         Filename2 = paste(Well, Image, Timepoint, sep = "_"),
-         X = Location_Center_X-(crop.size/2),
-         Y = Location_Center_Y-(crop.size/2),
-         Border = X < 0 | X > 1264-crop.size | Y < 0 | Y > 936-crop.size,
-         Class = as.character(NA)) %>%
-  filter(!Border & Timepoint != "00d06h00m")
-write.csv(data.nuc, "Classification/Netosis_Exp10_Classification.csv")
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = fluidPage(
@@ -28,18 +10,26 @@ ui = fluidPage(
     tabPanel("Curation",
              sidebarLayout(
                sidebarPanel(
+                 radioGroupButtons(inputId = "exp",
+                                   label = "Choose experiment",
+                                   choices = c("Exp10", "Exp13"), selected = character(0),
+                                   justified = TRUE,
+                                   checkIcon = list(yes = icon("circle", list("fa-solid"), style = "color: steelblue"),
+                                                    no = icon("circle", style = "color: steelblue"))),
                  shinyFilesButton("class_file", label = "Select class file", title = "Please select class file", multiple = "single",
                                   buttonType = "success"),
                  verbatimTextOutput("class_path"),
                  hr(style = "border-color: black; color: black;"),
                  tableOutput("n_class1"),
                  hr(style = "border-color: black; color: black;"),
+                 verbatimTextOutput("x"),
+                 verbatimTextOutput("img_n"),
+                 verbatimTextOutput("obj_n"),
                  searchInput(
                    inputId = "crop_n",
                    label = "Select specific cell crop to correct", 
                    placeholder = "Enter crop number (see 'Classified')",
-                   btnSearch = icon("search"), btnReset = icon("remove")#,
-                   # width = "100%"
+                   btnSearch = icon("search"), btnReset = icon("remove")
                  ),
                  hr(style = "border-color: black; color: black;"),
                  actionBttn(inputId = "save_close", style = "unite", color = "success", 
@@ -95,11 +85,9 @@ ui = fluidPage(
 ## Server ----------------------------------------------------------------------------------------------------------------------------------
 server = function(input, output, session) {
   session$onSessionEnded(function() {stopApp()})
-  observeEvent(input$save_close, {
-    write.csv(data.nuc2(), paste0("Classification/Netosis_Exp10_Classification_", format(Sys.time(), "%Y-%m-%d_%H-%M-%S"), ".csv"),
-              row.names = FALSE)
-    js$closewindow();
-    stopApp()
+  observe({
+    req(input$exp)
+    setwd(paste0("C:/Incucyte/Netosis/Netosis_", input$exp))
   })
   roots = c("Input" = "Classification", Home = "C:/Incucyte/Netosis/")
   shinyFileChoose(input, "class_file", roots=roots, filetypes=c("", "txt", "csv", "xls", "xlsx"))
@@ -110,6 +98,12 @@ server = function(input, output, session) {
     } else {
       paste0("Selected class file:\n", class_path())
     }
+  })
+  observeEvent(input$save_close, {
+    write.csv(data.nuc2(), str_replace(class_path(), ".csv", paste0("_", format(Sys.time(), "%Y-%m-%d_%H-%M-%S"), ".csv")),
+              row.names = FALSE)
+    js$closewindow();
+    stopApp()
   })
   data.nuc2 = reactiveVal(NULL)
   observeEvent(req(!is.integer(input$class_file)),
@@ -157,12 +151,16 @@ server = function(input, output, session) {
     obj.n(data.nuc2()$ObjectNumber[x()])
   })
   
+  output$x = renderText(x())
+  output$img_n = renderText(img.n())
+  output$obj_n = renderText(obj.n())
+  
   observeEvent(input$im2_dblclick, {
     brush(input$im2_brush)
   })
   output$im2 = renderImage({
-    req(x())
-    img = image_read(paste0("MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc2()$Filename2[x()], ".jpg"))
+    req(input$exp, x())
+    img = image_read(paste0("MultiChannel_Images/Netosis_", input$exp, "_Merged_", data.nuc2()$Filename2[x()], ".jpg"))
     img2 = image_draw(img)
     coord = data.nuc2()[x(), c("X", "Y")]
     rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = "white", lty = "dashed", lwd = 3)
@@ -177,16 +175,18 @@ server = function(input, output, session) {
     list(src = outfile, width = "auto", height = "auto")
   }, deleteFile = TRUE)
   output$im = renderPlot({
-    req(x(), ojb.n(), img.n())
-    im = image_read(paste0("Cell_Crops/Netosis-10_Phase_", data.nuc2()$Filename2[x()], "_", obj.n(), ".tif"))[1]
-    im2 = image_read(paste0("Cell_Crops/Netosis-10_Red_", data.nuc2()$Filename2[x()], "_", obj.n(), ".tif"))[1]
-    im3 = image_read(paste0("Cell_Crops/Netosis-10_Green_", data.nuc2()$Filename2[x()], "_", obj.n(), ".tif"))[1]
-    im = image_level(im, black_point = input$Phase[1], white_point = input$Phase[2], mid_point = input$Phase2)
-    im2 = image_level(im2, black_point = input$Red[1], white_point = input$Red[2], mid_point = input$Red2)
-    im3 = image_level(im3, black_point = input$Green[1], white_point = input$Green[2], mid_point = input$Green2)
-    (image_ggplot(im) + ggtitle("Phase")) / 
-      (image_ggplot(im2) + ggtitle("Red")) / 
-      (image_ggplot(im3) + ggtitle("Green")) & theme(plot.title = element_text(size = 20, hjust = 0.5))
+    req(x(), obj.n(), img.n())
+    im_list = map(list("Green" = "Green", "Phase" = "Phase", "Red" = "Red"), function(channel){
+      filename = paste(data.nuc2()$Experiment[x()], channel, data.nuc2()$Filename2[x()], sep = "_")
+      im = image_read(paste0(in.folder, filename, ".png"))
+      image_crop(im, geometry_area(crop.size, crop.size, data.nuc2()$X[x()], data.nuc2()$Y[x()]))
+    })
+    im_Phase = image_level(im_list$Phase, black_point = input$Phase[1], white_point = input$Phase[2], mid_point = input$Phase2)
+    im_Red = image_level(im_list$Red, black_point = input$Red[1], white_point = input$Red[2], mid_point = input$Red2)
+    im_Green = image_level(im_list$Green, black_point = input$Green[1], white_point = input$Green[2], mid_point = input$Green2)
+    (image_ggplot(im_Phase) + ggtitle("Phase")) / 
+      (image_ggplot(im_Red) + ggtitle("Red")) / 
+      (image_ggplot(im_Green) + ggtitle("Green")) & theme(plot.title = element_text(size = 20, hjust = 0.5))
   })
   output$n_class1 = renderTable({
     req(data.nuc2())
@@ -199,7 +199,7 @@ server = function(input, output, session) {
     n.class = sum(data.nuc2()$Class == input$class, na.rm = TRUE)
     idx.class = sample(which(data.nuc2()$Class == input$class), min(60, n.class))
     crop.list = map(as.list(idx.class), function(z){
-      img.z = image_read(paste0("MultiChannel_Images/Netosis_Exp10_Merged_", data.nuc2()$Filename2[z], ".jpg"))
+      img.z = image_read(paste0("MultiChannel_Images/Netosis_", input$exp, "_Merged_", data.nuc2()$Filename2[z], ".jpg"))
       crop.z = image_crop(img.z, geometry_area(width = 50, height = 50, x_off = data.nuc2()$X[z], y_off = data.nuc2()$Y[z]))
       image_ggplot(crop.z) +
         annotate("label", x = 43, y = 3, label = z, size = 3, hjust = 0.5)
