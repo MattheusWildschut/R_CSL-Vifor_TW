@@ -178,8 +178,8 @@ server = function(input, output, session) {
     req(x(), obj.n(), img.n())
     im_list = map(list("Green" = "Green", "Phase" = "Phase", "Red" = "Red"), function(channel){
       filename = paste(data.nuc2()$Experiment[x()], channel, data.nuc2()$Filename2[x()], sep = "_")
-      im = image_read(paste0(in.folder, filename, ".png"))
-      image_crop(im, geometry_area(crop.size, crop.size, data.nuc2()$X[x()], data.nuc2()$Y[x()]))
+      im = image_read(paste0("Raw_Images/", filename, ".png"))
+      image_crop(im, geometry_area(50, 50, data.nuc2()$X[x()], data.nuc2()$Y[x()]))
     })
     im_Phase = image_level(im_list$Phase, black_point = input$Phase[1], white_point = input$Phase[2], mid_point = input$Phase2)
     im_Red = image_level(im_list$Red, black_point = input$Red[1], white_point = input$Red[2], mid_point = input$Red2)

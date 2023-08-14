@@ -18,8 +18,8 @@ library(magick)
 ```{r Preprocess CellProfiler nuclear detection}
 crop.size = 50
 folder = "C:/Incucyte/Netosis/Netosis_Exp13/"
-raw.file = "CellProfiler/Netosis_Exp13_RedOnly2_Nucleus.csv"
-filename = "Classification/Netosis_Exp13_RedOnly2_Classification"
+raw.file = "CellProfiler/Netosis_Exp13_RedOnly3_Nucleus.csv"
+filename = "Classification/Netosis_Exp13_RedOnly3_Classification"
 
 if(!file.exists(paste0(folder, filename, ".csv"))){
   data.nuc.raw = fread(paste0(folder, raw.file))
