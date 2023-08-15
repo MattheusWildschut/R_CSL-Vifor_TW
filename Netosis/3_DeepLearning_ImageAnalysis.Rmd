@@ -378,7 +378,7 @@ list.track = foreach(obj.n0 = t.0h$ObjectNumber, .combine = "rbind.data.frame", 
 ```
 
 ## Flow chart transitions
-```{r Flow chart transitions, fig.width=6, fig.height=4}
+```{r Flow chart transitions, fig.width=10, fig.height=5}
 classes = c("Original", "Adherent", "FlatCell", "SmallGreen", "NET", "NoCell")
 track.changes = as.data.frame(table(list.track$Transition)) %>%
   `colnames<-`(c("Transition", "Frequency")) %>%
@@ -389,7 +389,7 @@ track.changes = as.data.frame(table(list.track$Transition)) %>%
   group_by(t1) %>% dplyr::mutate(Percentage = Frequency/sum(Frequency)*100)
 
 
-# library(ggalluvial)
+library(ggalluvial)
 ggplot(data = track.changes,
        aes(axis1 = t1, axis2 = t2, y = Percentage)) +
   ggalluvial::geom_alluvium(aes(fill = t1), curve_type = "arctangent", alpha = 0.8, col = "white") +
@@ -403,5 +403,64 @@ ggplot(data = track.changes,
   # scale_fill_viridis_d(na.value = "white")
   scale_fill_brewer(palette = "Set1", na.value = "grey50", limits = classes[1:5])
 
+
+list.track2 = list.track %>%
+  filter(!Timepoint %in% c("00d00h00m", "00d00h30m", "00d01h00m")) %>%
+  select(Obj.t0, Timepoint, Class) %>%
+  mutate(Class = factor(Class, levels = classes)) %>%#, labels = rep(c("Original", "FlatCell", "NET", "NoCell"), c(2,1,2,1)))) %>%
+  group_by(Obj.t0) %>% dplyr::mutate(Sequence = paste(Class, collapse = "-")) %>%
+  filter(!str_detect(Sequence, "NoCell"))
+plot.track = list.track2 %>%
+  group_by(Sequence, Timepoint, Class) %>% dplyr::tally(name = "Frequency") %>%
+  group_by(Timepoint) %>% dplyr::mutate(Percentage = Frequency/sum(Frequency)) %>%
+  mutate(Timepoint = str_remove(Timepoint, "00d"))
+
+ggplot(plot.track,
+       aes(x = Timepoint, stratum = Class, alluvium = Sequence,
+           y = Percentage,
+           fill = Class, label = Class)) +
+  geom_flow(alpha = 0.5, col = "white", width = 1/10) +
+  geom_stratum(width = 1/10) +
+  ggtitle("Netosis classes over time (Exp13)") +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8), panel.grid = element_blank(), plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(labels = scales::percent, expand = expansion(add = c(0,0))) +
+  scale_x_discrete(expand = expansion(add = c(0,0)))
+
+ggsave(paste0(folder, "Output/Classes_FlowChart.pdf"), width = 10, height = 5)
+
+```
+
+## Movie class transitions
+```{r Movie class transitions}
+library(magick)
+obj.n = unique(list.track2$Obj.t0)
+# obj.n = sample(list.track2$Obj.t0, size = 5)
+
+if(!dir.exists(paste0(folder, "Movies"))) dir.create(paste0(folder, "Movies"))
+i = 1
+img <- image_graph(1264, 936, res = 96)
+img.list = map2(as.list(times), as.list(1:length(times)), function(t, i) {
+  img = image_read(paste0(folder, "MultiChannel_Images/Netosis_Exp13_Merged_", "A4_", "1_", t, ".jpg"))
+  img = image_draw(img)
+  track.t = list.track %>% filter(Timepoint == t) %>% mutate(Class = as.character(Class))
+  for(z in obj.n){
+    track.obj = track.t %>% filter(Obj.t0 == z)
+    coord = track.obj[, c("Location_Center_X", "Location_Center_Y")]
+    col.class = switch(track.obj$Class,
+                     "Original" = "red4", "Adherent" = "red1", "FlatCell" = "orange",
+                     "SmallGreen" = "green3", "NET"= "green4", "NoCell" = "grey30")
+    rect(coord$Location_Center_X-25, coord$Location_Center_Y-25, coord$Location_Center_X+25, coord$Location_Center_Y+25,
+         border = col.class, lty = "dashed", lwd = 3)
+  }
+  img = image_annotate(img, text = t, gravity = "southeast", color = "white", size = 50)
+  dev.off()
+  p = image_ggplot(img)
+  print(p)
+})
+dev.off()
+animation <- image_animate(img, fps = 2, optimize = TRUE)
+print(animation)
+image_write(animation, paste0(folder, "Movies/", "Netosis_Exp13_Merged_", "A4_", "1", ".gif"))
 
 ```
