@@ -11,15 +11,15 @@ Built with R version `r getRversion()`
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/Netosis")
 source("../SourceFile_TW.R")
-library(magick)
 ```
 
 ## Preprocess CellProfiler nuclear detection
 ```{r Preprocess CellProfiler nuclear detection}
 crop.size = 50
-folder = "C:/Incucyte/Netosis/Netosis_Exp13/"
-raw.file = "CellProfiler/Netosis_Exp13_RedOnly3_Nucleus.csv"
-filename = "Classification/Netosis_Exp13_RedOnly3_Classification"
+folder = "C:/Incucyte/Netosis/Netosis_Exp17/"
+raw.file = "CellProfiler/Netosis_Exp17_CellProfiler_Nucleus.csv"
+filename = "Classification/Netosis_Exp17_Classification"
+if(!dir.exists(paste0(folder, str_remove(filename, "/.*")))) dir.create(paste0(folder, str_remove(filename, "/.*")))
 
 if(!file.exists(paste0(folder, filename, ".csv"))){
   data.nuc.raw = fread(paste0(folder, raw.file))

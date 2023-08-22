@@ -235,12 +235,14 @@ genes = c("HAVCR1", "CSF3", "IL6", "CPT1A", "CR1", "CFB", "C3AR1")
 data = readxl::read_excel("Input/Excel-data_qPCR-Injury_2023-07-19.xlsx", sheet = "qPCR_Data") %>%
   rbind.data.frame(readxl::read_excel("Input/Excel-data_qPCR-Complements_2023-08-03.xlsx", sheet = "qPCR_Data")) %>%
   filter(Condition %in% conditions & Gene %in% genes) %>%
-  mutate(Condition = factor(Condition, levels = conditions), Gene = factor(Gene, levels = genes))
+  mutate(Condition = factor(Condition, levels = conditions), 
+         Gene = factor(ifelse(Gene == "HAVCR1", "IL6", ifelse(Gene == "IL6", "HAVCR1", Gene)), levels = genes))
 data.sum = data %>%
   group_by(Condition, Gene) %>% dplyr::summarise(Expression = mean(`Normalized mRNA expression`)) %>%
-  mutate(Condition2 = factor(Condition, levels = levels(Condition), labels = rep(c("Medium", "BSA control", "Palmitate-BSA"), c(1,2,2))),
+  mutate(Condition2 = factor(Condition, levels = levels(Condition), labels = rep(c("Medium", "BSA control", "Palmitate-BSA\n(Ratio 6:1)"), c(1,2,2))),
          Condition = str_remove(Condition, " .*")) %>%
-  filter(Condition != "Medium")
+  filter(Condition != "Medium") %>%
+  mutate(Condition = factor(ifelse(Condition2 == "BSA control", ifelse(Condition == "200uM", "33.3uM", "100uM"), Condition), levels = c("33.3uM", "100uM", "200uM", "600uM")))
 
 
 ggplot(data.sum, aes(x = Gene, y = Condition, fill = log10(Expression))) +
@@ -255,6 +257,6 @@ ggplot(data.sum, aes(x = Gene, y = Condition, fill = log10(Expression))) +
   theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), panel.grid = element_blank()) +
   labs(x = NULL, y = NULL, fill = "Fold change\n(rel. to Medium)") + scale_y_discrete(limits = rev, position = "right")
 
-ggsave("Output/Heatmap-Poster_qPCR-InjuryNatalia3_TW.png", width = 5.5, height = 3)
+ggsave("Output/Heatmap-Poster_qPCR-InjuryNataliaCorr_TW.png", width = 5.5, height = 3)
 
 ```

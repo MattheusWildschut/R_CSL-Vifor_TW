@@ -27,12 +27,15 @@ options(scipen = 999)
 use_condaenv("tf_image")
 # folder = "C:/Incucyte/Netosis/Netosis_Exp10/"
 # filename = "Netosis_Exp10_Classification_2023-08-07_09-54-14.csv"
-folder = "C:/Incucyte/Netosis/Netosis_Exp13/"
-filename = "Netosis_Exp13_RedOnly3_Classification_2023-08-10_15-51-16.csv"
+# folder = "C:/Incucyte/Netosis/Netosis_Exp13/"
+# filename = "Netosis_Exp13_RedOnly3_Classification_2023-08-10_15-51-16.csv"
+folder = "C:/Incucyte/Netosis/Netosis_Exp17/"
+exp_name = str_extract(folder, "Exp[:digit:]{2}")
+filename = "Netosis_Exp17_Classification_2023-08-22_10-44-39.csv"
 crop.size = 50
-save.crops = FALSE
-train.model = FALSE
-save.plots = FALSE
+save.crops = TRUE
+train.model = TRUE
+save.plots = TRUE
 # tensorflow::install_tensorflow(envname = "tf_image", extra_packages = "pillow")
 # py_install("scipy", envname = "tf_image")
 
@@ -43,21 +46,23 @@ save.plots = FALSE
 ```{python Fix SSL}
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
+exit
 ```
 
 ### Store curated image crops
 ```{r Store curated image crops}
 if(save.crops){
+  set.seed(123)
   data = fread(paste0(folder, "Classification/", filename)) %>%
-  filter(!is.na(Class)) %>%
-  group_by(Class) %>% add_tally(name = "Cells") %>% dplyr::slice_sample(n = min(.$Cells[.$Class != "NoCell"]))
+    filter(!is.na(Class)) %>%
+    group_by(Class) %>% add_tally(name = "Cells") %>% dplyr::slice_sample(n = min(.$Cells))
 
   n.cores <- parallel::detectCores() - 1
   doSNOW::registerDoSNOW(cl = snow::makeSOCKcluster(n.cores))
   
   in.folder = paste0(folder, "Raw_Images/")
-  out.folder = paste0(folder, "Cell_Crops2/")
-  if(!dir.exists(out.folder)) dir.create(out.folder)
+  crop.folder = paste0(folder, "Cell_Crops/")
+  if(!dir.exists(crop.folder)) dir.create(crop.folder)
   crop.size = 50
   
   progress <- function(n) setTxtProgressBar(txtProgressBar(max = length(unique(data$Filename2)), style = 3), n)
@@ -70,7 +75,7 @@ if(save.crops){
       im = image_read(paste0(in.folder, filename, ".png"))[1]
       for(object in which(data$Filename2 == data$Filename2[i])){
         im2 = image_crop(im, geometry_area(crop.size, crop.size, data$X[object], data$Y[object]))
-        image_write(im2, path = paste0(out.folder, filename, "_", data$ObjectNumber[object], ".png"),
+        image_write(im2, path = paste0(crop.folder, filename, "_", data$ObjectNumber[object], ".png"),
                   format = "png", depth = 16)
       }
     }
@@ -80,21 +85,29 @@ if(save.crops){
 ```
 <hr style="border:1px solid gray"></hr>
 
+## CleanUp classifier
 ### Merge channels & organize in folders by class
 ```{r Merge channels & class folders}
+folder_cleanup = paste0(folder, "CleanUpCNN/")
+folder_train_c = paste0(folder_cleanup, "TrainingData/")
+
+classes = c("Original", "Adherent", "FlatCell", "NET", "NoCell")
+data_cleanup = data %>%
+  dplyr::mutate(Class = factor(Class, levels = classes, labels = c(rep("Cell", 4), "NoCell"))) %>%
+  group_by(Class) %>% add_tally(name = "Cells") %>% dplyr::slice_sample(n = min(.$Cells))
+
 if(save.crops){
-  if(!dir.exists(paste0(folder, "TrainingData"))) dir.create(paste0(folder, "TrainingData"))
-  walk(as.list(unique(data$Class)), function(class){
-    if(!dir.exists(paste0(folder, "TrainingData/", class))) dir.create(paste0(folder, "TrainingData/", class))
-    data.crops = data %>% filter(Class == class)
+  walk(as.list(unique(data_cleanup$Class)), function(class){
+    if(!dir.exists(paste0(folder_train_c, class))) dir.create(paste0(folder_train_c, class), recursive = TRUE)
+    data.crops = data_cleanup %>% filter(Class == class)
     img.comb = array(dim = c(50,50,3), dimnames = list(NULL, NULL, c("Phase", "Green", "Red")))
     for(i in 1:nrow(data.crops)){
       for(channel in c("Phase", "Green", "Red")){
-        img.comb[,,channel] = image_to_array(image_load(paste0(folder, "Cell_Crops2/Netosis_Exp13_", channel, "_", 
+        img.comb[,,channel] = image_to_array(image_load(paste0(crop.folder, "Netosis_", exp_name, "_", channel, "_", 
                                                                data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], ".png"),
                                                         color_mode = "grayscale"))
       }
-      image_array_save(path = paste0(folder, "TrainingData/", class, "/", 
+      image_array_save(path = paste0(folder_train_c, class, "/", 
                                      data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], "-", class, "_", i, ".png"), 
                        img = img.comb, scale = FALSE)
     }
@@ -103,8 +116,8 @@ if(save.crops){
 }
 
 ```
+<hr style="border:1px solid gray"></hr>
 
-## Network training
 ### Image loading & augmentation
 ```{r Image loading & augmentation}
 target_size <- c(50, 50) # Desired height and width of images
@@ -120,17 +133,238 @@ train_data_gen <- image_data_generator(# featurewise_center = TRUE,
                                        rotation_range = 45, # Rotate image from 0 to 45 degrees
                                        validation_split = 0.2)#, # 20% data as validation data
                                        #channel_shift_range = 5)
-train_image_array_gen <- flow_images_from_directory(directory = paste0(folder, "Trainingdata/"), # Data folder
+train_image_array_gen <- flow_images_from_directory(directory = folder_train_c, # Data folder
                                                     target_size = target_size, # target of the image dimension
                                                     color_mode = "rgb", # use RGB color
-                                                    batch_size = batch_size , 
+                                                    batch_size = batch_size, 
                                                     seed = 123,  # set random seed
                                                     subset = "training", # declare that this is training data
                                                     generator = train_data_gen)
-val_image_array_gen <- flow_images_from_directory(directory = paste0(folder, "Trainingdata/"),
+val_image_array_gen <- flow_images_from_directory(directory = folder_train_c,
                                                   target_size = target_size, 
                                                   color_mode = "rgb", 
-                                                  batch_size = batch_size ,
+                                                  batch_size = batch_size,
+                                                  seed = 123,
+                                                  subset = "validation", # declare that this is validation data
+                                                  generator = train_data_gen)
+
+train_samples <- train_image_array_gen$n # Number of training samples
+valid_samples <- val_image_array_gen$n # Number of validation samples
+# output_n <- n_distinct(train_image_array_gen$classes) # Number of target classes/categories
+# table("\nFrequency" = factor(train_image_array_gen$classes)) %>% prop.table() # Get the class proportion
+
+```
+<hr style="border:1px solid gray"></hr>
+
+### Model Architecture
+```{r Big model}
+tensorflow::tf$random$set_seed(123)
+
+model_big_cleanup <- keras_model_sequential() %>%
+
+  # First convolutional layer
+  layer_conv_2d(filters = 32,
+                kernel_size = c(5,5), # 5 x 5 filters
+                padding = "same",
+                activation = "relu",
+                input_shape = c(target_size, 3)
+                ) %>%
+
+  # Second convolutional layer
+  layer_conv_2d(filters = 32,
+                kernel_size = c(3,3), # 3 x 3 filters
+                padding = "same",
+                activation = "relu"
+                ) %>%
+
+  # Max pooling layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>%
+
+  # Third convolutional layer
+  layer_conv_2d(filters = 64,
+                kernel_size = c(3,3),
+                padding = "same",
+                activation = "relu"
+                ) %>%
+
+  # Max pooling layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>%
+
+  # Fourth convolutional layer
+  layer_conv_2d(filters = 128,
+                kernel_size = c(3,3),
+                padding = "same",
+                activation = "relu"
+                ) %>%
+
+  # Max pooling layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>%
+
+  # Fifth convolutional layer
+  layer_conv_2d(filters = 256,
+                kernel_size = c(3,3),
+                padding = "same",
+                activation = "relu"
+                ) %>%
+
+  # Max pooling layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>%
+
+  # Flattening layer
+  layer_flatten() %>%
+
+  # Dense layer
+  layer_dense(units = 64,
+              activation = "relu") %>%
+
+  # Output layer
+  layer_dense(name = "Output",
+              units = 2,
+              activation = "softmax")
+
+model_big_cleanup
+
+```
+<hr style="border:1px solid gray"></hr>
+
+### Model fitting
+```{r Model fitting}
+if(train.model){
+  set.seed(123)
+  folder_model_c = paste0(folder_cleanup, "Models/")
+  if(!dir.exists(folder_model_c)) dir.create(folder_model_c)
+  # ResNet = application_vgg16(classes = 6, weights = NULL, input_shape = c(50,50,3), pooling = "avg")
+
+  # ResNet %>%
+  model_big_cleanup %>%
+    compile(loss = "categorical_crossentropy",
+            optimizer = optimizer_adam(learning_rate = 0.001, epsilon = 0.01),
+            metrics = "accuracy")
+  
+  # history <- ResNet %>% 
+  history <- model_big_cleanup %>%
+    fit(train_image_array_gen, 
+        steps_per_epoch = as.integer(train_samples / batch_size), epochs = 100, 
+        validation_data = val_image_array_gen, validation_steps = as.integer(valid_samples / batch_size),
+        callbacks = list(
+          callback_model_checkpoint(paste0(folder_model_c, "CleanUp_weights_{epoch:02d}-{val_accuracy:.2f}.hdf5"), 
+                                    monitor = "val_accuracy", verbose = 1, save_best_only = TRUE),
+          callback_reduce_lr_on_plateau(monitor = "val_accuracy", factor = 0.1, patience = 10)
+        ))
+  # pdf(paste0(folder, "Models/Training_CellNoCell_", format(Sys.time(), "%Y-%m-%d_%H-%M-%S"), ".pdf"), width = 9, height = 6)
+  # plot(history)
+  # dev.off()
+  plot(history)
+  # weights_path = paste0(folder, "Models/Model_CellNocell", "_", format(Sys.time(), "%Y-%m-%d_%H-%M-%S"), ".ckpt")
+  # save_model_weights_tf(model_big, weights_path)
+}
+
+```
+<hr style="border:1px solid gray"></hr>
+
+### Save validation images
+```{r Validation images}
+folder_val_c = paste0(folder_cleanup, "ValidationData")
+if(!dir.exists(folder_val_c)) dir.create(folder_val_c)
+
+i = val_image_array_gen$filepaths[1]
+invisible(foreach(i=val_image_array_gen$filepaths, .packages = "stringr") %dopar%{
+  file.copy(i, str_replace(i, "TrainingData\\\\.*\\\\", "ValidationData/"))
+})
+
+val_data = image_dataset_from_directory(directory = folder_val_c,
+                                        image_size = c(50, 50),
+                                         color_mode = "rgb",
+                                         label_mode = NULL,
+                                         shuffle = FALSE)
+
+```
+<hr style="border:1px solid gray"></hr>
+
+### Confusion matrix CleanUp
+```{r Confusion matrix CleanUp, fig.width=4, fig.height=2.75}
+weights_path = list.files(folder_model_c, pattern = ".hdf5", full.names = TRUE)
+load_model_weights_tf(model_big_cleanup, weights_path[length(weights_path)])
+classes = sort(c("Cell", "NoCell"))
+classes2 = c("Cell", "NoCell", "Overall")
+
+val_pred = predict(model_big_cleanup, val_data) %>%
+  as.data.frame %>%
+  dplyr::mutate(Predict = apply(., 1, function(z) which(z == max(z))),
+                Predict = factor(Predict, levels = 1:length(classes), labels = classes),
+                Curate = factor(str_extract(val_data$file_paths, "(?<=-).*(?=_)"), levels = classes))
+
+conf.mat = confusionMatrix(data = val_pred$Predict, reference = val_pred$Curate)
+conf.plot = conf.mat$table %>% as.data.frame %>% 
+  group_by(Reference) %>% dplyr::mutate(Accuracy = Freq/sum(Freq)*100) %>%
+  dplyr::mutate(Prediction = factor(Prediction, levels = classes2), Reference = factor(Reference, levels = classes2))
+conf.plot = rbind.data.frame(conf.plot, 
+                             list("Overall", "Overall", sum(conf.plot$Freq), as.numeric(conf.mat$overall["Accuracy"])*100))
+
+ggplot(conf.plot, aes(x = Reference, y = Prediction, fill = Accuracy)) +
+  geom_tile(col = "white") +
+  scale_y_discrete(limits = rev) +
+  viridis::scale_fill_viridis() +
+  geom_text(aes(label = round(Accuracy, 1)), col = ifelse(conf.plot$Accuracy < 50, "white", "black")) +
+  theme_classic() + theme(axis.line = element_blank(), axis.ticks = element_blank()) +
+  coord_cartesian(expand = FALSE)
+
+```
+## Cell type classifier
+### Merge channels & organize in folders by class
+```{r Merge channels & class folders}
+folder_class = paste0(folder, "CellTypeCNN/")
+data_class = data %>% filter(Class != "NoCell")
+
+if(save.crops){
+  folder_train = paste0(folder_class, "TrainingData/")
+  walk(as.list(unique(data_class$Class)), function(class){
+    if(!dir.exists(paste0(folder_train, class))) dir.create(paste0(folder_train, class), recursive = TRUE)
+    data.crops = data_class %>% filter(Class == class)
+    img.comb = array(dim = c(50,50,3), dimnames = list(NULL, NULL, c("Phase", "Green", "Red")))
+    for(i in 1:nrow(data.crops)){
+      for(channel in c("Phase", "Green", "Red")){
+        img.comb[,,channel] = image_to_array(image_load(paste0(crop.folder, "Netosis_", exp_name, "_", channel, "_", 
+                                                               data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], ".png"),
+                                                        color_mode = "grayscale"))
+      }
+      image_array_save(path = paste0(folder_train, class, "/", 
+                                     data.crops$Filename2[i], "_", data.crops$ObjectNumber[i], "-", class, "_", i, ".png"), 
+                       img = img.comb, scale = FALSE)
+    }
+    print(paste0("Class ", class, ": ", nrow(data.crops), " images saved"))
+  })
+}
+
+```
+<hr style="border:1px solid gray"></hr>
+
+### Image loading & augmentation
+```{r Image loading & augmentation}
+target_size <- c(50, 50) # Desired height and width of images
+batch_size <- 16 # Batch size for training the model
+set.seed(123)
+
+train_data_gen <- image_data_generator(# featurewise_center = TRUE,
+                                       # featurewise_std_normalization = TRUE,
+                                       # samplewise_center = TRUE,
+                                       # samplewise_std_normalization = TRUE,
+                                       horizontal_flip = T, # Flip image horizontally
+                                       vertical_flip = T, # Flip image vertically
+                                       rotation_range = 45, # Rotate image from 0 to 45 degrees
+                                       validation_split = 0.2)#, # 20% data as validation data
+                                       #channel_shift_range = 5)
+train_image_array_gen <- flow_images_from_directory(directory = folder_train, # Data folder
+                                                    target_size = target_size, # target of the image dimension
+                                                    color_mode = "rgb", # use RGB color
+                                                    batch_size = batch_size, 
+                                                    seed = 123,  # set random seed
+                                                    subset = "training", # declare that this is training data
+                                                    generator = train_data_gen)
+val_image_array_gen <- flow_images_from_directory(directory = folder_train,
+                                                  target_size = target_size, 
+                                                  color_mode = "rgb", 
+                                                  batch_size = batch_size,
                                                   seed = 123,
                                                   subset = "validation", # declare that this is validation data
                                                   generator = train_data_gen)
@@ -206,7 +440,7 @@ model_big <- keras_model_sequential() %>%
 
   # Output layer
   layer_dense(name = "Output",
-              units = 6,
+              units = 4,
               activation = "softmax")
 
 model_big
@@ -217,6 +451,9 @@ model_big
 ### Model fitting
 ```{r Model fitting}
 if(train.model){
+  folder_model = paste0(folder_class, "Models/")
+  if(!dir.exists(folder_model)) dir.create(folder_model)
+  set.seed(123)
   # ResNet = application_vgg16(classes = 6, weights = NULL, input_shape = c(50,50,3), pooling = "avg")
 
   # ResNet %>%
@@ -229,29 +466,79 @@ if(train.model){
   history <- model_big %>%
     fit(train_image_array_gen, 
         steps_per_epoch = as.integer(train_samples / batch_size), epochs = 100, 
-        validation_data = val_image_array_gen, validation_steps = as.integer(valid_samples / batch_size))
+        validation_data = val_image_array_gen, validation_steps = as.integer(valid_samples / batch_size),
+        callbacks = list(
+          callback_model_checkpoint(paste0(folder_model, "weights_{epoch:02d}-{val_accuracy:.2f}.hdf5"), 
+                                    monitor = "val_accuracy", verbose = 1, save_best_only = TRUE),
+          callback_reduce_lr_on_plateau(monitor = "val_accuracy", factor = 0.1, patience = 10)
+        ))
   plot(history)
-  
-  if(!dir.exists(paste0(folder, "Models/"))) dir.create(paste0(folder, "Models/"))
-  weights_path = paste0(folder, "Models/Model", "_", format(Sys.time(), "%Y-%m-%d_%H-%M-%S"), ".ckpt")
-  save_model_weights_tf(model_big, weights_path)
 }
 
 ```
 
-## Class prediction
-### Save test image crops
-```{r Model Evaluation}
+### Save validation images
+```{r Validation images}
+folder_val = paste0(folder_class, "ValidationData/")
+if(!dir.exists(folder_val)) dir.create(folder_val)
+
+invisible(foreach(i=val_image_array_gen$filepaths, .packages = "stringr") %dopar%{
+  file.copy(i, str_replace(i, "TrainingData\\\\.*\\\\", "ValidationData/"))
+})
+
+val_data = image_dataset_from_directory(directory = folder_val,
+                                        image_size = c(50, 50),
+                                         color_mode = "rgb",
+                                         label_mode = NULL,
+                                         shuffle = FALSE)
+
+```
+<hr style="border:1px solid gray"></hr>
+
+### Confusion matrix CellType
+```{r Confusion matrix CellType, fig.width=5.25, fig.height=4}
+weights_path = list.files(folder_model, pattern = ".hdf5", full.names = TRUE)
+load_model_weights_tf(model_big, weights_path[length(weights_path)])
+classes = sort(c("Adherent", "FlatCell", "NET", "Original"))
+classes2 = c("Original", "Adherent", "FlatCell", "NET", "Overall")
+
+val_pred = predict(model_big, val_data) %>%
+  as.data.frame %>%
+  dplyr::mutate(Predict = apply(., 1, function(z) which(z == max(z))),
+                Predict = factor(Predict, levels = 1:length(classes), labels = classes),
+                Curate = factor(str_extract(val_data$file_paths, "(?<=-).*(?=_)"), levels = classes))
+
+conf.mat = confusionMatrix(data = val_pred$Predict, reference = val_pred$Curate)
+conf.plot = conf.mat$table %>% as.data.frame %>% 
+  group_by(Reference) %>% dplyr::mutate(Accuracy = Freq/sum(Freq)*100) %>%
+  dplyr::mutate(Prediction = factor(Prediction, levels = classes2), Reference = factor(Reference, levels = classes2))
+conf.plot = rbind.data.frame(conf.plot, 
+                             list("Overall", "Overall", sum(conf.plot$Freq), as.numeric(conf.mat$overall["Accuracy"])*100))
+
+ggplot(conf.plot, aes(x = Reference, y = Prediction, fill = Accuracy)) +
+  geom_tile(col = "white") +
+  scale_y_discrete(limits = rev) +
+  viridis::scale_fill_viridis() +
+  geom_text(aes(label = round(Accuracy, 1)), col = ifelse(conf.plot$Accuracy < 50, "white", "black")) +
+  theme_classic() + theme(axis.line = element_blank(), axis.ticks = element_blank()) +
+  coord_cartesian(expand = FALSE)
+
+```
+<hr style="border:1px solid gray"></hr>
+
+## CleanUp & cell type prediction
+### Save test images
+```{r Save test images}
 set.seed(123)
 
 data = fread(paste0(folder, "Classification/", filename)) %>%
   filter(is.na(Class)) %>%
-  filter(Well == "A4")# %>%
+  filter(Well %in% c("C6", "C7", "C8"))# %>%
   # group_by(Image, Timepoint) %>% slice_sample(n = 50)
 
 if(save.crops){
   in.folder = paste0(folder, "Raw_Images/")
-  out.folder = paste0(folder, "Test_Data3/")
+  out.folder = paste0(folder, "Test_Data/")
   
   n.cores <- parallel::detectCores() - 1
   doSNOW::registerDoSNOW(cl = snow::makeSOCKcluster(n.cores))
@@ -276,16 +563,12 @@ if(save.crops){
     }
   })
 }
-
 ```
 <hr style="border:1px solid gray"></hr>
 
-### Predict test images
-```{r Predict test images}
-weights_path = paste0(folder, "Models/Model_2023-08-11_16-06-16.ckpt")
-load_model_weights_tf(model_big, weights_path)
-classes = sort(c("Adherent", "FlatCell", "NET", "NoCell", "Original", "SmallGreen"))
-data_pred = image_dataset_from_directory(directory = paste0(folder, "Test_Data2/"),
+### Class probability (tSNE) images
+```{r Class probability tSNE, fig.width=5, fig.height=4, out.width="100%"}
+data_pred = image_dataset_from_directory(directory = paste0(folder, "Test_Data/"),
                                          image_size = c(50, 50),
                                          color_mode = "rgb",
                                          label_mode = NULL,
@@ -293,27 +576,28 @@ data_pred = image_dataset_from_directory(directory = paste0(folder, "Test_Data2/
 
 class_pred = model_big %>% predict(data_pred) %>%
   as.data.frame %>%
-  mutate(Class = apply(., 1, function(z) which(z == max(z))),
-         Class = factor(Class, levels = 1:length(classes), labels = classes),
-         Filename = str_remove_all(data_pred$file_paths, ".*\\\\|Netosis_Exp.._|.png"))
-```
-<hr style="border:1px solid gray"></hr>
+  dplyr::mutate(Class = apply(., 1, function(z) which(z == max(z))),
+                Class = factor(Class, levels = 1:length(classes), labels = classes),
+                Filename = str_remove_all(data_pred$file_paths, ".*\\\\|Netosis_Exp.._|.png"))
 
-### Class probability tSNE
-```{r Class probability tSNE, fig.width=5, fig.height=4, out.width="100%"}
-tSNE_fit = Rtsne(class_pred[,1:length(classes)])
+sel_pred = class_pred %>%
+  dplyr::mutate(Image = str_remove(Filename, "-.*")) %>%
+  group_by(Image, Class) %>% slice_sample(n = 25) %>%
+  filter(Class != "NoCell")
+
+tSNE_fit = Rtsne(-log10(sel_pred[,1:length(classes)]))
 tSNE_df = tSNE_fit$Y  %>%
   as.data.frame %>%
   `colnames<-`(c("X", "Y")) %>%
-  mutate(Prediction = class_pred$Class)#,
+  mutate(Prediction = sel_pred$Class)#,
          # Curation = str_extract(class_pred$Filename, paste(names(data_pred$class_indices), collapse = "|")))
 
 p = ggplot(tSNE_df, aes(x = X, y = Y, col = Prediction)) +
-  geom_point(alpha = 0.25) +
+  geom_point(alpha = 0.5, size = 0.2) +
   theme_bw()
 
 if(!dir.exists(paste0(folder, "Output/"))) dir.create(paste0(folder, "Output/"))
-if(save.plots) ggsave(p, paste0(folder, "Output/tSNE_ValidationData.pdf"), width = 5, height = 4)
+# if(save.plots) ggsave(p, path = paste0(folder, "Output/tSNE_ValidationData.pdf"), width = 5, height = 4)
 plotly::ggplotly(p, width = 500, height = 400)
 
 ```
@@ -333,40 +617,41 @@ data.sum = data.annot %>%
 
 plotly::ggplotly(ggplot(data.sum, aes(x = Timepoint, y = Percentage, fill = Class)) +
   geom_col(position = position_stack(), col = "white", lwd = 0.1) +
+  facet_wrap(.~ Well) +
   scale_fill_manual(values = c("Original" = "red4", "Adherent" = "red1", "FlatCell" = "orange",
                                "SmallGreen" = "green3", "NET"= "green4")) +
   scale_y_continuous(expand = expansion(mult = c(0,0)), labels = ~paste0(.x, "%")) +
   theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8), panel.grid = element_blank()),
-  width = 600, height = 400)
+  width = 900, height = 400)
 
 ```
 <hr style="border:1px solid gray"></hr>
 
-### Show predicted classes on image
-```{r Predicted classes on image, fig.width=13.5, fig.height=10}
-img.sel = "A4_1_00d06h00m"
-img = image_read(paste0(folder, "MultiChannel_Images/Netosis_Exp13_Merged_", img.sel, ".jpg"))
-img = image_draw(img)
-data.sel = data.annot %>% filter(Filename2 == img.sel) %>%
-  mutate(Class = as.character(Class))
-for (i in 1:nrow(data.sel)){
-  coord = data.sel[i, c("X", "Y")]
-  col.class = switch(data.sel$Class[i],
-                     "Original" = "red4", "Adherent" = "red1", "FlatCell" = "orange",
-                     "SmallGreen" = "green3", "NET"= "green4", "NoCell" = "grey30")
-  rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = col.class, lty = "dashed", lwd = 3)
-}
-invisible(dev.off())
-image_ggplot(img)
+<!-- ### Show predicted classes on image -->
+<!-- ```{r Predicted classes on image, fig.width=13.5, fig.height=10} -->
+<!-- img.sel = "A4_1_00d06h00m" -->
+<!-- img = image_read(paste0(folder, "MultiChannel_Images/Netosis_Exp13_Merged_", img.sel, ".jpg")) -->
+<!-- img = image_draw(img) -->
+<!-- data.sel = data.annot %>% filter(Filename2 == img.sel) %>% -->
+<!--   mutate(Class = as.character(Class)) -->
+<!-- for (i in 1:nrow(data.sel)){ -->
+<!--   coord = data.sel[i, c("X", "Y")] -->
+<!--   col.class = switch(data.sel$Class[i], -->
+<!--                      "Original" = "red4", "Adherent" = "red1", "FlatCell" = "orange", -->
+<!--                      "SmallGreen" = "green3", "NET"= "green4", "NoCell" = "grey30") -->
+<!--   rect(coord$X, coord$Y, coord$X+50, coord$Y+50, border = col.class, lty = "dashed", lwd = 3) -->
+<!-- } -->
+<!-- invisible(dev.off()) -->
+<!-- image_ggplot(img) -->
 
-```
+<!-- ``` -->
 
 ## Cell tracking
 ### Object tracking over time series
 ```{r Object tracking over time series}
 data.track = data.annot %>%
   select(Filename2, Experiment, Well, Image, Timepoint, ObjectNumber, Location_Center_X, Location_Center_Y, Class) %>%
-  filter(Image == 1)
+  filter(Well == "C6" & Image == 1)
 
 n.cores <- parallel::detectCores() - 1
 doSNOW::registerDoSNOW(cl = snow::makeSOCKcluster(n.cores))
@@ -374,7 +659,7 @@ progress <- function(n) setTxtProgressBar(txtProgressBar(max = length(unique(dat
 opts <- list(progress = progress)
 
 times = unique(data.track$Timepoint)
-t.0h = data.track %>% filter(Timepoint == "00d00h00m")
+t.0h = data.track %>% filter(Timepoint == "00d00h30m" & Class != "NoCell")
 list.track = foreach(obj.n0 = t.0h$ObjectNumber, .combine = "rbind.data.frame", .multicombine = TRUE, .packages = c("foreach", "dplyr")) %dopar% {
   obj.n = obj.n0
   foreach(t = 1:length(times), .combine = "rbind.data.frame", .multicombine = TRUE) %do% {
@@ -397,7 +682,7 @@ list.track = foreach(obj.n0 = t.0h$ObjectNumber, .combine = "rbind.data.frame", 
 
 ### Flow chart transitions
 ```{r Flow chart transitions, fig.width=10, fig.height=5}
-classes = c("Original", "Adherent", "FlatCell", "SmallGreen", "NET", "NoCell")
+classes = c("Original", "Adherent", "FlatCell", "NET", "NoCell")
 track.changes = as.data.frame(table(list.track$Transition)) %>%
   `colnames<-`(c("Transition", "Frequency")) %>%
   mutate(Transition = as.character(Transition),
@@ -418,7 +703,6 @@ track.changes = as.data.frame(table(list.track$Transition)) %>%
 #   theme_classic() + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(), axis.line.y = element_blank()) +
 #   # scale_fill_viridis_d(na.value = "white")
 #   scale_fill_brewer(palette = "Set1", na.value = "grey50", limits = classes[1:5])
-
 
 list.track2 = list.track %>%
   filter(!Timepoint %in% c("00d00h00m", "00d00h30m", "00d01h00m")) %>%
@@ -457,7 +741,8 @@ if(!dir.exists(paste0(folder, "Movies"))) dir.create(paste0(folder, "Movies"))
 i = 1
 img <- image_graph(1264, 936, res = 96)
 img.list = map2(as.list(times), as.list(1:length(times)), function(t, i) {
-  img = image_read(paste0(folder, "MultiChannel_Images/Netosis_Exp13_Merged_", "A4_", "1_", t, ".jpg"))
+  img = image_read(paste0(folder, "MultiChannel_Images/Netosis_", str_extract(folder, "Exp[:digit:]{2}"),
+                          "_Merged_", "C6_", "1_", t, ".jpg"))
   img = image_draw(img)
   track.t = list.track %>% filter(Timepoint == t) %>% mutate(Class = as.character(Class))
   for(z in obj.n){
@@ -477,9 +762,13 @@ img.list = map2(as.list(times), as.list(1:length(times)), function(t, i) {
 dev.off()
 animation <- image_animate(img, fps = 2, optimize = TRUE)
 # print(animation)
-if(save.plots) image_write(animation, paste0(folder, "Movies/", "Netosis_Exp13_Merged_", "A4_", "1", ".gif"))
+if(save.plots) image_write(animation, paste0(folder, "Movies/", "Netosis_", str_extract(folder, "Exp[:digit:]{2}"), 
+                                             "_Merged_", "C6_", "1", ".gif"))
 
-knitr::include_graphics(paste0(folder, "Movies/", "Netosis_Exp13_Merged_", "A4_", "1", ".gif"))
+knitr::include_graphics(paste0(folder, "Movies/", "Netosis_", str_extract(folder, "Exp[:digit:]{2}"),
+                               "_Merged_", "C6_", "1", ".gif"))
+
+data.annot %>% filter(Timepoint == "00d00h30m" & Well == "C6" & Image == 1)
 
 ```
 

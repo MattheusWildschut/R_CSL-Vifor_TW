@@ -12,7 +12,8 @@ ui = fluidPage(
                sidebarPanel(
                  radioGroupButtons(inputId = "exp",
                                    label = "Choose experiment",
-                                   choices = c("Exp10", "Exp13"), selected = character(0),
+                                   choices = str_remove(list.files("C:/Incucyte/Netosis", pattern = "Netosis_Exp"), "Netosis_"),
+                                   selected = character(0),
                                    justified = TRUE,
                                    checkIcon = list(yes = icon("circle", list("fa-solid"), style = "color: steelblue"),
                                                     no = icon("circle", style = "color: steelblue"))),
@@ -100,7 +101,7 @@ server = function(input, output, session) {
     }
   })
   observeEvent(input$save_close, {
-    write.csv(data.nuc2(), str_replace(class_path(), ".csv", paste0("_", format(Sys.time(), "%Y-%m-%d_%H-%M-%S"), ".csv")),
+    write.csv(data.nuc2(), str_replace(class_path(), "_2023.*.csv", paste0("_", format(Sys.time(), "%Y-%m-%d_%H-%M-%S"), ".csv")),
               row.names = FALSE)
     js$closewindow();
     stopApp()
@@ -152,7 +153,7 @@ server = function(input, output, session) {
   })
   
   output$x = renderText(x())
-  output$img_n = renderText(img.n())
+  output$img_n = renderText(unlist(data.nuc2()$Filename2[x()]))
   output$obj_n = renderText(obj.n())
   
   observeEvent(input$im2_dblclick, {

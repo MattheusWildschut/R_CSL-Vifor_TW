@@ -121,7 +121,7 @@ server = function(input, output, session) {
         filter(Row %in% 2:17 & str_detect(Column, "[C-Z]")) %>%
         mutate(Gene = factor(colors.genes$Gene[match(Color, colors.genes$Color)], levels = layout.genes),
                Condition.num = layout$Condition[match(Cell, layout$Cell)],
-               Condition = factor(sample.list$Samples[match(Condition.num, sample.list$No.)], levels = sample.list$Samples),
+               Condition = factor(sample.list$Samples[match(Condition.num, sample.list$No)], levels = sample.list$Samples),
                Column.num = Column.num-min(Column.num)+1,
                Row = Row-min(Row)+1,
                Well = paste0(LETTERS[Row], Column.num))
