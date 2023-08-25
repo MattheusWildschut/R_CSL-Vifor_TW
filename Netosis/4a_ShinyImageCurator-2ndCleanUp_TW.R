@@ -120,8 +120,8 @@ server = function(input, output, session) {
   
   observeEvent(buttons(), {
     data.nuc2(data.nuc2() %>%
-                mutate(Class = ifelse(ObjectNumber == obj.n() & ImageNumber == img.n(), class(), as.character(Class))) %>%
-                mutate(Class = factor(Class, levels = c("Cell", "NoCell")))
+                mutate(Class2 = ifelse(Filename == data.nuc2()$Filename[x()], class(), as.character(Class2))) %>%
+                mutate(Class2 = factor(Class2, levels = c("Cell", "NoCell")))
     )
     x_list(append(x_list(), x()))
     brush(NULL)
@@ -213,7 +213,7 @@ server = function(input, output, session) {
     grid = expand.grid(LETTERS[1:10], 1:6)
     grid = paste0(grid$Var1, grid$Var2)
     fluidRow(
-      pickerInput("sel_img", label = "Select specific image to correct class", choices = paste0(grid, " | ", idx_class())),
+      pickerInput("sel_img", label = "Select specific image to correct class", choices = paste0(grid, " | ", idx_class()), multiple = TRUE),
       radioGroupButtons("sel_class", choices = c("Cell", "NoCell"), selected = character(0), justified = TRUE),
       hr(style = "border-color: black; color: black;"),
       actionBttn(inputId = "class_corr", label = "All cells correct", style = "unite", color = "success")
@@ -221,16 +221,16 @@ server = function(input, output, session) {
   })
   observeEvent(input$sel_img, {
     req(input$sel_img)
-    x(as.numeric(str_remove(input$sel_img, ".* | ")))
+    x(as.numeric(str_remove(input$sel_img[1], ".* | ")))
   })
   observeEvent(input$sel_class, {
     req(input$sel_class)
     data.nuc2(data.nuc2() %>%
-                mutate(Class2 = ifelse(Filename == data.nuc2()$Filename[as.numeric(str_remove(input$sel_img, ".* | "))], input$sel_class, as.character(Class2))) %>%
+                mutate(Class2 = ifelse(Filename %in% data.nuc2()$Filename[as.numeric(str_remove(input$sel_img, ".* | "))], input$sel_class, as.character(Class2))) %>%
                 mutate(Class2 = factor(Class2, levels = c("Cell", "NoCell")))
     )
     updateRadioGroupButtons(inputId = "sel_class", selected = character(0))
-    idx_class(idx_class()[idx_class() != str_remove(input$sel_img, ".* | ")])
+    idx_class(idx_class()[!idx_class() %in% str_remove(input$sel_img, ".* | ")])
   })
   observeEvent(input$class_corr, {
     n.class = sum(data.nuc2()$Class == input$class, na.rm = TRUE)
@@ -244,4 +244,3 @@ server = function(input, output, session) {
 
 ## App ----------------------------------------------------------------------------------------------------------------------------------
 shinyApp(ui = ui, server = server, options = list("launch.browser" = TRUE))
-
