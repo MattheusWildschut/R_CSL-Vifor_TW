@@ -1,5 +1,23 @@
-setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/qPCR")
-source("../SourceFile_TW.R")
+folder = dirname(rstudioapi::getSourceEditorContext()$path)
+setwd(folder)
+Sys.setenv(LANG = "EN")
+suppressPackageStartupMessages({
+  library(stringr)
+  library(viridis)
+  library(ggplot2)
+  library(data.table)
+  library(ggpubr)
+  library(shiny)
+  library(shinyWidgets)
+  library(shinyFiles)
+  library(knitr)
+  library(patchwork)
+  library(ggfortify)
+  library(xlsx)
+  library(tidyverse)
+  library(shinyjs)
+})
+options(dplyr.summarise.inform = FALSE)
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = fluidPage(
@@ -19,7 +37,8 @@ ui = fluidPage(
         tabPanel("Data table", dataTableOutput("data"),
                  uiOutput("ui.download.xlsx")),
         tabPanel("Plot | Influence medium", uiOutput("medium.ui"), uiOutput("medium.ui2")),
-        tabPanel("Plot | qPCR data", uiOutput("plot.ui"), uiOutput("plot.ui2"))
+        tabPanel("Plot | qPCR data", uiOutput("plot.ui"), uiOutput("plot.ui2")),
+        tabPanel("Plot | Delta CT values", uiOutput("dCTplot.ui"), uiOutput("dCTplot.ui2"))
       )
     )
   )
@@ -125,9 +144,7 @@ server = function(input, output, session) {
                Column.num = Column.num-min(Column.num)+1,
                Row = Row-min(Row)+1,
                Well = paste0(LETTERS[Row], Column.num))
-      # browser()
       left_join(colors.cells, fread(path), by = join_by("Well" == "Pos"))
-      # browser()
     })
     
     data = data.comb %>%
@@ -143,11 +160,11 @@ server = function(input, output, session) {
              Condition2 = factor(str_remove(Condition, " \\(\\+ Cytotox Green\\)|Incucyte - "),
                                  levels = unique(str_remove(sample.list$Samples, " \\(\\+ Cytotox Green\\)|Incucyte - ")))) %>%
       group_by(Gene, Medium) %>% dplyr::mutate(`Normalized mRNA expression` = round(2^-(Cp_norm-mean(Cp_norm[str_detect(Condition, "Medium")], na.rm = TRUE)),2)) %>%
-      arrange(Gene, Condition, `Normalized mRNA expression`)
-    # browser()
+      # arrange(Gene, Condition, `Normalized mRNA expression`)
+      arrange(str_extract(Well, "[:alpha:]"), as.numeric(str_extract(Well, "[:digit:]+")))
   })
   output$data = renderDataTable({
-    data() %>% dplyr::select(Cell, Well, Gene, Condition, Medium, Cp, Cp_norm, `Normalized mRNA expression`)
+    data() %>% dplyr::select(Well, Gene, Condition, Medium, Cp, Cp_norm, `Normalized mRNA expression`)
   })
   medium_react = reactive({
     data.medium = data() %>% filter(Condition2 == "Medium")
@@ -189,7 +206,7 @@ server = function(input, output, session) {
       geom_vline(xintercept = length(unique(plot.data$Condition))/2+0.5, linetype = 2) + 
       facet_wrap(.~Gene2, scales = "free", ncol = input$plot.columns) +
       scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23, "Incucyte" = 23)) +
-      scale_fill_discrete(type = c("black", brewer.pal("Paired", n = length(unique(plot.data$Condition2))-1))) +
+      scale_fill_discrete(type = c("black", RColorBrewer::brewer.pal("Paired", n = length(unique(plot.data$Condition2))-1))) +
       theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                          panel.grid.major.x = element_blank()) +
       labs(x = NULL, fill = "Condition") + scale_y_continuous(trans = "log2") + 
@@ -212,6 +229,41 @@ server = function(input, output, session) {
   output$plot.ui = renderUI({
     req(input$plot.width)
     plotOutput("plot", width = input$plot.width, height = input$plot.height)
+  })
+  dCTplot_react = reactive({
+    req(input$sample_sheet)
+    sample.list = readxl::read_excel(layout_filepath(), sheet = input$sample_sheet)
+    plot.data = data() %>% filter(Gene != "HPRT") %>%
+      dplyr::mutate(Cp_norm = 2^-Cp_norm)
+    ggplot(plot.data, aes(x = Condition, y = Cp_norm, fill = Condition2, shape = Medium)) +
+      # geom_hline(yintercept = 1, linetype = 2) +
+      geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
+      geom_vline(xintercept = length(unique(plot.data$Condition))/2+0.5, linetype = 2) + 
+      facet_wrap(.~Gene2, scales = "free", ncol = input$plot.columns) +
+      scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23, "Incucyte" = 23)) +
+      scale_fill_discrete(type = c("black", RColorBrewer::brewer.pal("Paired", n = length(unique(plot.data$Condition2))-1))) +
+      theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+                         panel.grid.major.x = element_blank()) +
+      labs(x = NULL, fill = "Condition", y = "2^-(Delta CT value)") + scale_y_continuous(trans = "log2") + 
+      guides(fill = guide_legend(override.aes = list(shape = 21)),
+             shape = guide_legend(override.aes = list(fill = "black")))
+  })
+  output$dCTplot = renderPlot({
+    dCTplot_react()
+  })
+  output$dCTplot.ui2 = renderUI({
+    req(!is.integer(input$data_files) & !is.integer(input$layout_file) &
+          all(unlist(map(layout_sheets2(), ~!is.null(.x)))), input$sample_sheet)
+    fluidRow(hr(), 
+             column(sliderInput("dCTplot.columns", label = "Select amount of columns", min = 1, max = 10, value = 4), hr(), 
+                    downloadBttn("dCTplot.download", label = list(icon("file-pdf"), "Download plot as PDF"), color = "danger", size = "sm"), width = 3),
+             column(sliderInput("dCTplot.width", label = "Select width plot", min = 150, max = 1500, value = 1250, step = 25), hr(), width = 3),
+             column(sliderInput("dCTplot.height", label = "Select height plot", min = 100, max = 900, value = 500, step = 25), hr(), width = 3)
+    )
+  })
+  output$dCTplot.ui = renderUI({
+    req(input$dCTplot.width)
+    plotOutput("dCTplot", width = input$dCTplot.width, height = input$dCTplot.height)
   })
   output$ui.download.xlsx = renderUI({
     req(!is.integer(input$data_files) & !is.integer(input$layout_file) &
@@ -242,6 +294,11 @@ server = function(input, output, session) {
     content = function(file) {
       ggsave(file, plot_react(), width = input$plot.width/72, height = input$plot.height/72)
   })
+  output$dCTplot.download = downloadHandler(
+    filename = function() { paste0("qPCR-dCTplot_", Sys.Date(), '.pdf') },
+    content = function(file) {
+      ggsave(file, dCTplot_react(), width = input$dCTplot.width/72, height = input$dCTplot.height/72)
+    })
 }
 
 ## App ----------------------------------------------------------------------------------------------------------------------------------
