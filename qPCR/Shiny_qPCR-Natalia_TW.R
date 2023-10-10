@@ -140,7 +140,10 @@ server = function(input, output, session) {
         filter(Row %in% 2:17 & str_detect(Column, "[C-Z]")) %>%
         mutate(Gene = factor(colors.genes$Gene[match(Color, colors.genes$Color)], levels = layout.genes),
                Condition.num = layout$Condition[match(Cell, layout$Cell)],
-               Condition = factor(sample.list$Samples[match(Condition.num, sample.list$No)], levels = sample.list$Samples),
+               Condition = factor(sample.list$Samples[match(Condition.num, sample.list$No)],
+                                  levels = c("Medium", unique(sample.list$Samples)[unique(sample.list$Samples) != "Medium"])),
+               Medium = factor(sample.list$Medium[match(Condition.num, sample.list$No)],
+                               levels = c("Medium", unique(sample.list$Medium[sample.list$Medium != "Medium"]))),
                Column.num = Column.num-min(Column.num)+1,
                Row = Row-min(Row)+1,
                Well = paste0(LETTERS[Row], Column.num))
@@ -150,15 +153,16 @@ server = function(input, output, session) {
     data = data.comb %>%
       filter(!is.na(Condition) & !Condition %in% c("NTC", "Vehicle", "Incucyte - Vehicle")) %>%
       dplyr::mutate(Cp = ifelse(Cp == 40, NA, Cp)) %>%
-      group_by(Condition) %>% dplyr::mutate(Cp_norm = round(Cp-mean(Cp[Gene == "HPRT"], na.rm = TRUE),2)) %>%
+      group_by(Condition, Medium) %>% dplyr::mutate(Cp_norm = round(Cp-mean(Cp[Gene == "HPRT"], na.rm = TRUE),2)) %>%
       # filter(Gene != "HPRT") %>% 
       arrange(Gene) %>%
       group_by(Gene) %>% dplyr::mutate(Gene2 = factor(Gene, labels = unique(paste0(Gene, " (Ct: ", round(mean(Cp[Condition == "Medium"], na.rm = TRUE),1), ")")))) %>%
       group_by(Gene) %>% dplyr::mutate(mRNA_norm = 2^-(Cp_norm-mean(Cp_norm[Condition == "Medium"], na.rm = TRUE))) %>%
-      mutate(Medium = factor(replace_na(str_extract(Condition, "\\+ Cytotox Green|Incucyte"), "Medium"),
-                             levels = c("Medium", "+ Cytotox Green", "Incucyte")),
-             Condition2 = factor(str_remove(Condition, " \\(\\+ Cytotox Green\\)|Incucyte - "),
-                                 levels = unique(str_remove(sample.list$Samples, " \\(\\+ Cytotox Green\\)|Incucyte - ")))) %>%
+      # mutate(Medium = factor(replace_na(str_extract(Condition, "\\+ Cytotox Green|Incucyte"), "Medium"),
+      #                        levels = c("Medium", "+ Cytotox Green", "Incucyte")),
+      #        Condition2 = factor(str_remove(Condition, " \\(\\+ Cytotox Green\\)|Incucyte - "),
+      #                            levels = unique(str_remove(sample.list$Samples, " \\(\\+ Cytotox Green\\)|Incucyte - ")))) %>%
+      # dplyr::mutate(Medium = factor(sample.list$Medium, levels = c("Medium", unique(sample.list$Medium[sample.list$Medium != "Medium"])))) %>%
       group_by(Gene, Medium) %>% dplyr::mutate(`Normalized mRNA expression` = round(2^-(Cp_norm-mean(Cp_norm[str_detect(Condition, "Medium")], na.rm = TRUE)),2)) %>%
       # arrange(Gene, Condition, `Normalized mRNA expression`)
       arrange(str_extract(Well, "[:alpha:]"), as.numeric(str_extract(Well, "[:digit:]+")))
@@ -167,7 +171,7 @@ server = function(input, output, session) {
     data() %>% dplyr::select(Well, Gene, Condition, Medium, Cp, Cp_norm, `Normalized mRNA expression`)
   })
   medium_react = reactive({
-    data.medium = data() %>% filter(Condition2 == "Medium")
+    data.medium = data() %>% filter(Condition == "Medium")
     ggplot(data.medium, aes(x = Condition, y = mRNA_norm, fill = Condition, shape = Medium)) +
       geom_hline(yintercept = 1, linetype = 2) +
       geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
@@ -199,14 +203,16 @@ server = function(input, output, session) {
   plot_react = reactive({
     req(input$sample_sheet)
     sample.list = readxl::read_excel(layout_filepath(), sheet = input$sample_sheet)
-    plot.data = data() %>% filter(Gene != "HPRT")
-    ggplot(plot.data, aes(x = Condition, y = `Normalized mRNA expression`, fill = Condition2, shape = Medium)) +
+    plot.data = data() %>% filter(Gene != "HPRT") %>%
+      arrange(Medium, Condition) %>% mutate(Xaxis = factor(paste(Medium, Condition), levels = unique(paste(Medium, Condition))))
+    x_intercepts = floor(quantile(1:length(unique(plot.data$Xaxis)), seq(0,1,1/length(levels(plot.data$Medium)))[!seq(0,1,1/length(levels(plot.data$Medium))) %in% c(0,1)])) + 0.5
+    ggplot(plot.data, aes(x = Xaxis, y = `Normalized mRNA expression`, fill = Condition, shape = Medium)) +
       geom_hline(yintercept = 1, linetype = 2) +
       geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
-      geom_vline(xintercept = length(unique(plot.data$Condition))/2+0.5, linetype = 2) + 
+      geom_vline(xintercept = x_intercepts, linetype = 2) + 
       facet_wrap(.~Gene2, scales = "free", ncol = input$plot.columns) +
-      scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23, "Incucyte" = 23)) +
-      scale_fill_discrete(type = c("black", RColorBrewer::brewer.pal("Paired", n = length(unique(plot.data$Condition2))-1))) +
+      scale_shape_manual(values = c(21, 23, 22, 24, 25)[1:length(levels(plot.data$Medium))]) +
+      scale_fill_discrete(type = c("black", RColorBrewer::brewer.pal("Paired", n = length(unique(plot.data$Condition))-1))) +
       theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                          panel.grid.major.x = element_blank()) +
       labs(x = NULL, fill = "Condition") + scale_y_continuous(trans = "log2") + 
@@ -235,13 +241,13 @@ server = function(input, output, session) {
     sample.list = readxl::read_excel(layout_filepath(), sheet = input$sample_sheet)
     plot.data = data() %>% filter(Gene != "HPRT") %>%
       dplyr::mutate(Cp_norm = 2^-Cp_norm)
-    ggplot(plot.data, aes(x = Condition, y = Cp_norm, fill = Condition2, shape = Medium)) +
+    ggplot(plot.data, aes(x = Condition, y = Cp_norm, fill = Condition, shape = Medium)) +
       # geom_hline(yintercept = 1, linetype = 2) +
       geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
       geom_vline(xintercept = length(unique(plot.data$Condition))/2+0.5, linetype = 2) + 
       facet_wrap(.~Gene2, scales = "free", ncol = input$plot.columns) +
       scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23, "Incucyte" = 23)) +
-      scale_fill_discrete(type = c("black", RColorBrewer::brewer.pal("Paired", n = length(unique(plot.data$Condition2))-1))) +
+      scale_fill_discrete(type = c("black", RColorBrewer::brewer.pal("Paired", n = length(unique(plot.data$Condition))-1))) +
       theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                          panel.grid.major.x = element_blank()) +
       labs(x = NULL, fill = "Condition", y = "2^-(Delta CT value)") + scale_y_continuous(trans = "log2") + 
