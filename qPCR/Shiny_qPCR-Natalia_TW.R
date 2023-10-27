@@ -1,7 +1,7 @@
 folder = dirname(rstudioapi::getSourceEditorContext()$path)
 setwd(folder)
 Sys.setenv(LANG = "EN")
-suppressPackageStartupMessages({
+suppressPackageStartupMessages(suppressWarnings({
   library(stringr)
   library(viridis)
   library(ggplot2)
@@ -16,7 +16,8 @@ suppressPackageStartupMessages({
   library(xlsx)
   library(tidyverse)
   library(shinyjs)
-})
+  library(sortable)
+}))
 options(dplyr.summarise.inform = FALSE)
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
@@ -30,11 +31,12 @@ ui = fluidPage(
       shinyFilesButton("layout_file", label = "Select layout file", title = "Please select layout file", multiple = FALSE,
                        buttonType = "primary"),
       verbatimTextOutput("layout_filepath"),
-      uiOutput("ui.layout")
+      uiOutput("ui.layout"),
+      uiOutput("ui.layout2")
     ),
     mainPanel(
       tabsetPanel(
-        tabPanel("Data table", dataTableOutput("data"),
+        tabPanel("Data table", dataTableOutput("data.table"),
                  uiOutput("ui.download.xlsx")),
         tabPanel("Plot | Influence medium", uiOutput("medium.ui"), uiOutput("medium.ui2")),
         tabPanel("Plot | qPCR data", uiOutput("plot.ui"), uiOutput("plot.ui2")),
@@ -68,21 +70,12 @@ server = function(input, output, session) {
       paste0("Selected layout file:\n", layout_filepath())
     }
   })
-  output$data = renderDataTable({
-    req(!is.integer(input$data_files))
-    map_dfr(as.list(data_filepaths()), fread)
-  })
-  output$layout = renderDataTable({
-    req(!is.integer(input$layout_file))
-    data.frame(readxl::excel_sheets(path = layout_filepath()))
-  })
-  
   layout_sheets = reactive(as.list(1:length(data_filepaths())))
   output$ui.layout = renderUI({
     req(!is.integer(input$layout_file))
     fluidRow(column(radioGroupButtons(inputId = "sample_sheet",
                                       label = "Select sample list sheet",
-                                      choices = readxl::excel_sheets(path = layout_filepath()),
+                                      choices = readxl::excel_sheets(path = layout_filepath())[str_detect(readxl::excel_sheets(path = layout_filepath()),"(?i)sample")],
                                       size = "sm", individual = TRUE, selected = character(0),
                                       checkIcon = list(yes = icon("circle", class = "fa-solid fa-circle", style = "color: steelblue"),
                                                        no = icon("circle", class = "fa-regular fa-circle", style = "color: steelblue"))), 
@@ -90,7 +83,7 @@ server = function(input, output, session) {
              map(layout_sheets(), function(i){
                column(radioGroupButtons(inputId = paste0("layout_sheet", i),
                                       label = paste0("Select layout sheet for ", "'", data_filepaths()[i], "'"),
-                                      choices = readxl::excel_sheets(path = layout_filepath()),
+                                      choices = readxl::excel_sheets(path = layout_filepath())[str_detect(readxl::excel_sheets(path = layout_filepath()),"(?i)layout")],
                                       size = "sm", individual = TRUE, selected = character(0),
                                       checkIcon = list(yes = icon("circle", class = "fa-solid fa-circle", style = "color: steelblue"),
                                                        no = icon("circle", class = "fa-regular fa-circle", style = "color: steelblue"))), 
@@ -147,41 +140,53 @@ server = function(input, output, session) {
                Column.num = Column.num-min(Column.num)+1,
                Row = Row-min(Row)+1,
                Well = paste0(LETTERS[Row], Column.num))
-      left_join(colors.cells, fread(path), by = join_by("Well" == "Pos"))
+      left_join(colors.cells, fread(path), by = join_by("Well" == "Pos")) %>%
+        mutate(Well = paste0(str_extract(sheet, "Plate [:digit:]|Plate[:digit:]"), "_", Well))
     })
     
     data = data.comb %>%
       filter(!is.na(Condition) & !Condition %in% c("NTC", "Vehicle", "Incucyte - Vehicle")) %>%
       dplyr::mutate(Cp = ifelse(Cp == 40, NA, Cp)) %>%
       group_by(Condition, Medium) %>% dplyr::mutate(Cp_norm = round(Cp-mean(Cp[Gene == "HPRT"], na.rm = TRUE),2)) %>%
-      # filter(Gene != "HPRT") %>% 
       arrange(Gene) %>%
       group_by(Gene) %>% dplyr::mutate(Gene2 = factor(Gene, labels = unique(paste0(Gene, " (Ct: ", round(mean(Cp[Condition == "Medium"], na.rm = TRUE),1), ")")))) %>%
       group_by(Gene) %>% dplyr::mutate(mRNA_norm = 2^-(Cp_norm-mean(Cp_norm[Condition == "Medium"], na.rm = TRUE))) %>%
-      # mutate(Medium = factor(replace_na(str_extract(Condition, "\\+ Cytotox Green|Incucyte"), "Medium"),
-      #                        levels = c("Medium", "+ Cytotox Green", "Incucyte")),
-      #        Condition2 = factor(str_remove(Condition, " \\(\\+ Cytotox Green\\)|Incucyte - "),
-      #                            levels = unique(str_remove(sample.list$Samples, " \\(\\+ Cytotox Green\\)|Incucyte - ")))) %>%
-      # dplyr::mutate(Medium = factor(sample.list$Medium, levels = c("Medium", unique(sample.list$Medium[sample.list$Medium != "Medium"])))) %>%
       group_by(Gene, Medium) %>% dplyr::mutate(`Normalized mRNA expression` = round(2^-(Cp_norm-mean(Cp_norm[str_detect(Condition, "Medium")], na.rm = TRUE)),2)) %>%
-      # arrange(Gene, Condition, `Normalized mRNA expression`)
       arrange(str_extract(Well, "[:alpha:]"), as.numeric(str_extract(Well, "[:digit:]+")))
   })
-  output$data = renderDataTable({
+  output$data.table = renderDataTable({
     data() %>% dplyr::select(Well, Gene, Condition, Medium, Cp, Cp_norm, `Normalized mRNA expression`)
   })
+  output$ui.layout2 = renderUI({
+    req(data())
+    colors = c("black", "steelblue1", "steelblue4", "firebrick1", "firebrick4", "springgreen1", "springgreen4", "darkorange1", "darkorange4", "pink1", "pink4", 
+                      "steelblue2", "steelblue3", "firebrick2", "firebrick3", "springgreen2", "springgreen3", "darkorange2", "darkorange3", "pink2", "pink3",
+                      "goldenrod", "violet", "magenta")
+    fluidRow(tags$style(HTML(paste0("#", colors, " {background-color: ", col2hcl(colors), c("; color: white", rep("", length(colors)-1)), ";}"))),
+             column(rank_list(input_id = "list_mediums",
+                              text = tags$b("Sort medium conditions (first will be used as 'base')"),
+                              labels = unique(data()$Medium)),
+                    width = 12),
+             column(rank_list(input_id = "list_conditions",
+                              text = tags$b("Sort stimuli conditions"),
+                              labels = unique(data()$Condition)),
+                    width = 6),
+             column(rank_list(input_id = "list_colors",
+                              text = tags$b("Sort colors"),
+                              labels = map(as.list(colors), function(x) div(x, id = x))),
+                    width = 6))
+  })
   medium_react = reactive({
-    data.medium = data() %>% filter(Condition == "Medium")
-    ggplot(data.medium, aes(x = Condition, y = mRNA_norm, fill = Condition, shape = Medium)) +
+    data.medium = data() %>% filter(Condition == "Medium") %>% 
+      dplyr::mutate(Medium = factor(Medium, levels = input$list_mediums))
+    ggplot(data.medium, aes(x = Medium, y = mRNA_norm, fill = Medium, shape = Medium)) +
       geom_hline(yintercept = 1, linetype = 2) +
       geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
       facet_wrap(.~Gene, ncol = input$medium.columns) +
-      scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23, "Incucyte" = 23)) +
+      scale_shape_manual(values = c(21, 23, 22, 24, 25, 26, 27)[1:length(levels(data.medium$Medium))]) +
       theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                          panel.grid.major.x = element_blank()) +
-      labs(x = NULL, y = "mRNA expression\n(normalized to medium)") +
-      guides(fill = guide_legend(override.aes = list(shape = c(21,23))),
-             shape = "none")
+      labs(x = NULL, y = paste0("mRNA expression Medium condition\n(normalized to ", input$list_mediums[1], ")"))
   })
   output$medium = renderPlot({
     medium_react()
@@ -204,6 +209,7 @@ server = function(input, output, session) {
     req(input$sample_sheet)
     sample.list = readxl::read_excel(layout_filepath(), sheet = input$sample_sheet)
     plot.data = data() %>% filter(Gene != "HPRT") %>%
+      dplyr::mutate(Medium = factor(Medium, levels = input$list_mediums), Condition = factor(Condition, levels = input$list_conditions)) %>%
       arrange(Medium, Condition) %>% mutate(Xaxis = factor(paste(Medium, Condition), levels = unique(paste(Medium, Condition))))
     x_intercepts = floor(quantile(1:length(unique(plot.data$Xaxis)), seq(0,1,1/length(levels(plot.data$Medium)))[!seq(0,1,1/length(levels(plot.data$Medium))) %in% c(0,1)])) + 0.5
     ggplot(plot.data, aes(x = Xaxis, y = `Normalized mRNA expression`, fill = Condition, shape = Medium)) +
@@ -211,8 +217,8 @@ server = function(input, output, session) {
       geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
       geom_vline(xintercept = x_intercepts, linetype = 2) + 
       facet_wrap(.~Gene2, scales = "free", ncol = input$plot.columns) +
-      scale_shape_manual(values = c(21, 23, 22, 24, 25)[1:length(levels(plot.data$Medium))]) +
-      scale_fill_discrete(type = c("black", RColorBrewer::brewer.pal("Paired", n = length(unique(plot.data$Condition))-1))) +
+      scale_shape_manual(values = c(21, 23, 22, 24, 25, 26, 27)[1:length(levels(plot.data$Medium))]) +
+      scale_fill_discrete(type = input$list_colors[1:length(levels(plot.data$Condition))]) +
       theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                          panel.grid.major.x = element_blank()) +
       labs(x = NULL, fill = "Condition") + scale_y_continuous(trans = "log2") + 
@@ -240,17 +246,21 @@ server = function(input, output, session) {
     req(input$sample_sheet)
     sample.list = readxl::read_excel(layout_filepath(), sheet = input$sample_sheet)
     plot.data = data() %>% filter(Gene != "HPRT") %>%
-      dplyr::mutate(Cp_norm = 2^-Cp_norm)
-    ggplot(plot.data, aes(x = Condition, y = Cp_norm, fill = Condition, shape = Medium)) +
-      # geom_hline(yintercept = 1, linetype = 2) +
+      dplyr::mutate(Cp_norm = 2^-Cp_norm) %>%
+      dplyr::mutate(Medium = factor(Medium, levels = input$list_mediums), Condition = factor(Condition, levels = input$list_conditions)) %>%
+      arrange(Medium, Condition) %>% mutate(Xaxis = factor(paste(Medium, Condition), levels = unique(paste(Medium, Condition))))
+    x_intercepts = floor(quantile(1:length(unique(plot.data$Xaxis)), seq(0,1,1/length(levels(plot.data$Medium)))[!seq(0,1,1/length(levels(plot.data$Medium))) %in% c(0,1)])) + 0.5
+    # avg_medium = mean(plot.data$Cp_norm[plot.data$Medium == input$list_mediums[1] & plot.data$Condition == "Medium"], na.rm = TRUE)
+    ggplot(plot.data, aes(x = Xaxis, y = Cp_norm, fill = Condition, shape = Medium)) +
+      # geom_hline(yintercept = avg_medium, linetype = 2) +
       geom_point(size = 2.5, col = "grey30", stroke = 0.01) +
-      geom_vline(xintercept = length(unique(plot.data$Condition))/2+0.5, linetype = 2) + 
-      facet_wrap(.~Gene2, scales = "free", ncol = input$plot.columns) +
-      scale_shape_manual(values = c("Medium" = 21, "+ Cytotox Green" = 23, "Incucyte" = 23)) +
-      scale_fill_discrete(type = c("black", RColorBrewer::brewer.pal("Paired", n = length(unique(plot.data$Condition))-1))) +
+      geom_vline(xintercept = x_intercepts, linetype = 2) + 
+      facet_wrap(.~Gene2, scales = "free", ncol = input$dCTplot.columns) +
+      scale_shape_manual(values = c(21, 23, 22, 24, 25, 26, 27)[1:length(levels(plot.data$Medium))]) +
+      scale_fill_discrete(type = input$list_colors[1:length(levels(plot.data$Condition))]) +
       theme_bw() + theme(text = element_text(size = 18), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
                          panel.grid.major.x = element_blank()) +
-      labs(x = NULL, fill = "Condition", y = "2^-(Delta CT value)") + scale_y_continuous(trans = "log2") + 
+      labs(x = NULL, fill = "Condition") + scale_y_continuous(trans = "log2") + 
       guides(fill = guide_legend(override.aes = list(shape = 21)),
              shape = guide_legend(override.aes = list(fill = "black")))
   })
