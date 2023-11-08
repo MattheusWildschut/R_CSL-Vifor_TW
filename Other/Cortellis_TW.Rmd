@@ -1,0 +1,71 @@
+---
+title: "Cortellis_TW"
+author: "Thijs Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("../SourceFile_TW.R")
+```
+
+## R Markdown
+
+```{r cars, fig.width=9, fig.height=6.75}
+filenames = list.files("Input/Cortellis", pattern = "_Cortellis.xlsx")
+data = map_dfr(as.list(filenames), function(x) data.frame("Gene" = str_remove(x, "_Cortellis.xlsx"), 
+                                                          read.xlsx(paste0("Input/Cortellis/", x), sheetName = "Product List")))
+filenames2 = list.files("Input/Cortellis", pattern = "_DrugType.csv")
+data2 = map_dfr(as.list(filenames2), function(x) data.frame("Gene" = str_remove(x, "_DrugType.csv"), 
+                                                          fread(paste0("Input/Cortellis/", x))))
+
+data.plot = data %>% filter(Gene != "CSF3R") %>%
+  # rbind.data.frame(c("IRF7", rep(NA, 45))) %>%
+  # dplyr::mutate(Highest.Phase = ifelse(is.na(Highest.Phase), "Biological Testing", Highest.Phase), 
+  #               Under.Active.Development = ifelse(is.na(Under.Active.Development), "No", Under.Active.Development)) %>%
+  dplyr::select(Gene, Drug.Name..All., Highest.Phase, Under.Active.Development) %>%
+  dplyr::mutate(Highest.Phase = factor(str_remove(Highest.Phase, " - .*"),
+                                       levels = c("Launched", "Registered", "Pre-Registered", "Discontinued", 
+                                                     "Phase III", "Phase II/III", "Phase II", "Phase I/II", "Phase I", "IND Filed", "Clinical",
+                                                     "Preclinical", "Biological Testing")),
+                Phase = factor(paste0(Highest.Phase, ifelse(Under.Active.Development == "Yes", "_Active", "")),
+                               levels = paste0(rep(levels(Highest.Phase), each = 2), c("_Active", ""))),
+                Group = factor(Phase, levels = levels(Phase), labels = rep(c("Post-clinical", "Clinical", "Preclinical"), c(8, 14, 4))),
+                Group2 = factor(Gene, levels = unique(Gene), labels = c("pDC | IFNs", "Neutrophil | NETs", "Neutrophil | NETs", "Neutrophil | NETs", 
+                                                                        "pDC | IFNs", "Neutrophil | NETs", "Neutrophil | NETs", "pDC | IFNs"))) %>%
+  group_by(Gene, Highest.Phase, Group, Group2) %>% add_tally(name = "Count") %>% ungroup %>%
+  # dplyr::mutate(n = ifelse(is.na(Group), NA, n)) %>%
+  rbind.data.frame(c("IRF7", NA, "Biological Testing", NA, "Biological Testing", "Preclinical", "pDC | IFNs", NA),
+                   c("IRF8", NA, "Biological Testing", NA, "Biological Testing", "Preclinical", "pDC | IFNs", NA)) %>%
+  dplyr::mutate(Count = as.numeric(Count))
+  
+plot1 = ggplot(data.plot, aes(x = Highest.Phase, y = Gene, fill = Count)) +
+  geom_tile(col = ifelse(is.na(data.plot$Count), "white", "grey80")) + geom_text(aes(label = Count), col = "white") +
+  facet_grid(Group2~Group, scales = "free", space = "free", switch = "y") +
+  theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.25), panel.grid = element_blank(), legend.position = "bottom") +
+  scale_fill_continuous(trans = "log10", na.value = "white") +
+  scale_y_discrete(limits = rev) +
+  labs(fill = "Amount of drugs", x = NULL)
+
+data.plot2 = data2 %>%
+  rbind.data.frame(c("IRF7", rep(NA, 3)),
+                   c("IRF8", rep(NA, 3))) %>%
+  dplyr::mutate(Drug.Type = str_replace(Drug.Type, "Small Molecules .*", "Small Molecules"),
+                Group2 = data.plot$Group2[match(Gene, data.plot$Gene)],
+                Count = as.numeric(Count))
+  
+plot2 = ggplot(data.plot2, aes(x = Count, y = Gene, fill = Drug.Type)) +
+  geom_col(position = "fill") +
+  facet_grid(Group2~., scales = "free", space = "free", switch = "y") +
+  scale_y_discrete(limits = rev) +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_fill_brewer(palette = "Set2") +
+  theme_classic() + theme(axis.text = element_blank(), strip.text = element_blank(), legend.position = "bottom", legend.direction = "vertical") +
+  labs(fill = "Drug type", x = NULL, y = NULL)
+
+plot1 + plot2 + plot_layout(widths = c(5,1))
+
+ggsave("Output/Cortellis_WhitePaper5.pdf", width = 9, height = 6.75)
+
+```
