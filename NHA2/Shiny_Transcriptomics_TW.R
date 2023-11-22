@@ -1,5 +1,5 @@
 ## Data loading
-setwd("C:\\Users\\mwildschut\\OneDrive - Vifor Pharma AG\\Documents\\R\\Projects\\R_CSL-Vifor_TW")
+setwd("C:\\Users\\mwildschut\\OneDrive - CSL Behring\\Documents\\R\\Projects\\R_CSL-Vifor_TW")
 source("SourceFile_TW.R")
 
 dataset = "GSE7869"

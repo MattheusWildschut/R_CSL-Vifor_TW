@@ -12,19 +12,23 @@ source("../SourceFile_TW.R")
 
 ## R Markdown
 
-```{r cars, fig.width=9, fig.height=6.75}
+```{r cars, fig.width=7.5, fig.height=8}
 filenames = list.files("Input/Cortellis", pattern = "_Cortellis.xlsx")
-data = map_dfr(as.list(filenames), function(x) data.frame("Gene" = str_remove(x, "_Cortellis.xlsx"), 
+targets = data.frame("Target" = str_remove(filenames, "_Cortellis.xlsx"),
+                     "Process" = factor(c(3, 3, 2, 1, 1, 1, 3, 3, 2, 3, 1, 1, 2, 3), 
+                                        levels = 1:3, labels = c("Neutrophil | NETs", "pDC | IFNs", "Mϕ | Inflammasome")))
+data = map_dfr(as.list(filenames), function(x) data.frame("Target" = str_remove(x, "_Cortellis.xlsx"), 
                                                           read.xlsx(paste0("Input/Cortellis/", x), sheetName = "Product List")))
-filenames2 = list.files("Input/Cortellis", pattern = "_DrugType.csv")
-data2 = map_dfr(as.list(filenames2), function(x) data.frame("Gene" = str_remove(x, "_DrugType.csv"), 
-                                                          fread(paste0("Input/Cortellis/", x))))
 
-data.plot = data %>% filter(Gene != "CSF3R") %>%
+filenames2 = list.files("Input/Cortellis", pattern = "_DrugType.csv")
+data2 = map_dfr(as.list(filenames2), function(x) data.frame("Target" = str_remove(x, "_DrugType.csv"), 
+                                                            fread(paste0("Input/Cortellis/", x))))
+
+data.plot = data %>% filter(Target != "CSF3R") %>%
   # rbind.data.frame(c("IRF7", rep(NA, 45))) %>%
-  # dplyr::mutate(Highest.Phase = ifelse(is.na(Highest.Phase), "Biological Testing", Highest.Phase), 
+  # dplyr::mutate(Highest.Phase = ifelse(is.na(Highest.Phase), "Biological Testing", Highest.Phase),
   #               Under.Active.Development = ifelse(is.na(Under.Active.Development), "No", Under.Active.Development)) %>%
-  dplyr::select(Gene, Drug.Name..All., Highest.Phase, Under.Active.Development) %>%
+  dplyr::select(Target, Drug.Name..All., Highest.Phase, Under.Active.Development) %>%
   dplyr::mutate(Highest.Phase = factor(str_remove(Highest.Phase, " - .*"),
                                        levels = c("Launched", "Registered", "Pre-Registered", "Discontinued", 
                                                      "Phase III", "Phase II/III", "Phase II", "Phase I/II", "Phase I", "IND Filed", "Clinical",
@@ -32,15 +36,15 @@ data.plot = data %>% filter(Gene != "CSF3R") %>%
                 Phase = factor(paste0(Highest.Phase, ifelse(Under.Active.Development == "Yes", "_Active", "")),
                                levels = paste0(rep(levels(Highest.Phase), each = 2), c("_Active", ""))),
                 Group = factor(Phase, levels = levels(Phase), labels = rep(c("Post-clinical", "Clinical", "Preclinical"), c(8, 14, 4))),
-                Group2 = factor(Gene, levels = unique(Gene), labels = c("pDC | IFNs", "Neutrophil | NETs", "Neutrophil | NETs", "Neutrophil | NETs", 
-                                                                        "pDC | IFNs", "Neutrophil | NETs", "Neutrophil | NETs", "pDC | IFNs"))) %>%
-  group_by(Gene, Highest.Phase, Group, Group2) %>% add_tally(name = "Count") %>% ungroup %>%
+                Group2 = factor(Target, levels = targets$Target, labels = targets$Process),
+                Group2 = factor(Group2, levels = levels(targets$Process))) %>%
+  group_by(Target, Highest.Phase, Group, Group2) %>% add_tally(name = "Count") %>% ungroup %>%
   # dplyr::mutate(n = ifelse(is.na(Group), NA, n)) %>%
   rbind.data.frame(c("IRF7", NA, "Biological Testing", NA, "Biological Testing", "Preclinical", "pDC | IFNs", NA),
                    c("IRF8", NA, "Biological Testing", NA, "Biological Testing", "Preclinical", "pDC | IFNs", NA)) %>%
   dplyr::mutate(Count = as.numeric(Count))
   
-plot1 = ggplot(data.plot, aes(x = Highest.Phase, y = Gene, fill = Count)) +
+plot1 = ggplot(data.plot, aes(x = Highest.Phase, y = Target, fill = Count)) +
   geom_tile(col = ifelse(is.na(data.plot$Count), "white", "grey80")) + geom_text(aes(label = Count), col = "white") +
   facet_grid(Group2~Group, scales = "free", space = "free", switch = "y") +
   theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.25), panel.grid = element_blank(), legend.position = "bottom") +
@@ -52,10 +56,11 @@ data.plot2 = data2 %>%
   rbind.data.frame(c("IRF7", rep(NA, 3)),
                    c("IRF8", rep(NA, 3))) %>%
   dplyr::mutate(Drug.Type = str_replace(Drug.Type, "Small Molecules .*", "Small Molecules"),
-                Group2 = data.plot$Group2[match(Gene, data.plot$Gene)],
+                Drug.Type = str_replace(Drug.Type, "Combinations|Drug conjugates|Herbals", "Others"),
+                Group2 = data.plot$Group2[match(Target, data.plot$Target)],
                 Count = as.numeric(Count))
   
-plot2 = ggplot(data.plot2, aes(x = Count, y = Gene, fill = Drug.Type)) +
+plot2 = ggplot(data.plot2, aes(x = Count, y = Target, fill = Drug.Type)) +
   geom_col(position = "fill") +
   facet_grid(Group2~., scales = "free", space = "free", switch = "y") +
   scale_y_discrete(limits = rev) +
@@ -66,6 +71,6 @@ plot2 = ggplot(data.plot2, aes(x = Count, y = Gene, fill = Drug.Type)) +
 
 plot1 + plot2 + plot_layout(widths = c(5,1))
 
-ggsave("Output/Cortellis_WhitePaper5.pdf", width = 9, height = 6.75)
+ggsave("Output/Cortellis_WhitePaper5.pdf", width = 7.5, height = 8)
 
 ```
