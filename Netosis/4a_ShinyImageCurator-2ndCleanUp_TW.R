@@ -1,5 +1,5 @@
 ## Shiny Image Curator
-source("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
+source("C:/Users/mwildschut/OneDrive - CSL Behring/Documents/R/Projects/R_CSL-Vifor_TW/SourceFile_TW.R")
 
 ## UI ----------------------------------------------------------------------------------------------------------------------------------
 ui = fluidPage(
@@ -98,7 +98,7 @@ server = function(input, output, session) {
     }
   })
   observeEvent(input$save_close, {
-    write.csv(data.nuc2(), paste0(str_remove(class_path(), "_2023.*.csv"), "_", format(Sys.time(), "%Y-%m-%d_%H-%M-%S"), ".csv"),
+    write.csv(data.nuc2(), paste0(str_remove_all(class_path(), "_2023.*|.csv"), "_", format(Sys.time(), "%Y-%m-%d_%H-%M-%S"), ".csv"),
               row.names = FALSE)
     js$closewindow();
     stopApp()
@@ -120,13 +120,16 @@ server = function(input, output, session) {
   
   observeEvent(buttons(), {
     data.nuc2(data.nuc2() %>%
-                mutate(Class2 = ifelse(Filename == data.nuc2()$Filename[x()], class(), as.character(Class2))) %>%
+                mutate(Class2 = ifelse(Filename2 == Filename2[x()] & ObjectNumber == ObjectNumber[x()], class(), as.character(Class2))) %>%
                 mutate(Class2 = factor(Class2, levels = c("Cell", "NoCell")))
     )
     x_list(append(x_list(), x()))
     brush(NULL)
     updateSearchInput(session = session, inputId = "crop_n", value = "")
   }, ignoreInit = TRUE)
+  observeEvent(data.nuc2(), {
+    x(sample(which(is.na(data.nuc2()$Class2)),1))
+  })
   observeEvent(input$previous, {
     x(x_list()[[length(x_list())]])
     x_list(x_list()[1:(length(x_list())-1)])
