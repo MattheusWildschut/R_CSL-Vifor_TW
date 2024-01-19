@@ -9,8 +9,8 @@ Built with R version `r getRversion()`
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
-setwd("C:/Users/mwildschut/OneDrive - Vifor Pharma AG/Documents/R/Projects/R_CSL-Vifor_TW/RESOLUTE")
-source("../SourceFile_TW.R")
+setwd("C:/Users/U0142615/OneDrive - CSL Behring/Documents/R/Projects/R_CSL-Vifor_TW/RESOLUTE")
+# source("../SourceFile_TW.R")
 ```
 
 ```{r load packages & functions, include=FALSE}

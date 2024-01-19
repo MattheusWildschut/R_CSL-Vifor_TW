@@ -1,0 +1,56 @@
+---
+title: "VascularCalcification_BW_TW"
+author: "Thijs (Mattheus) Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Built with R version `r getRversion()`
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+source("../SourceFile_TW.R")
+```
+
+## Biomarkers clinical study
+
+```{r, fig.width=18, fig.height=11}
+raw.data = fread("Input/biomarkers.csv")
+unique(paste0(raw.data$`Analysis Visit`, "\n(", raw.data$`Planned Time Point Name`, ")"))
+unique(raw.data$`Biomarker Test Name`)
+
+data = raw.data %>%
+  mutate(`Biomarker Numeric Result in Std Format` = as.numeric(`Biomarker Numeric Result in Std Format`),
+         `Analysis Visit` = factor(paste0(`Analysis Visit`, "\n(", `Planned Time Point Name`, ")"),
+                                   levels = c("Week 1 Day 1\n(Pre-Dose)", "Week 1 Day 1\n(20 Minutes Prior To End of Infusion)",
+                                              "Week 12 Day 5\n(Pre-Dose)", "Week 24 Day 5\n(Pre-Dose)", "Follow-up\n(NA)"),
+                                   labels  = c("Week 1 Day 1\n(Pre-Dose)", "Week 1 Day 1\n(20 Minutes Prior\nTo End of Infusion)",
+                                              "Week 12 Day 5\n(Pre-Dose)", "Week 24 Day 5\n(Pre-Dose)", "Follow-up"))) %>%
+  group_by(`Unique Subject Identifier`, `Biomarker Test Name`) %>% 
+  filter("Week 1 Day 1\n(Pre-Dose)" %in% `Analysis Visit`) %>%
+  # tally()
+  dplyr::mutate(`Biomarker normalized to baseline` = `Biomarker Numeric Result in Std Format`-
+                  `Biomarker Numeric Result in Std Format`[`Analysis Visit` == "Week 1 Day 1\n(Pre-Dose)"]) %>%
+  ungroup() %>%
+  filter(`Analysis Value Flag` == "Y" & `Biomarker Result in Original Units` != "<LLOQ" & !is.na(`Biomarker normalized to baseline`)) %>%
+  filter(`Analysis Visit` != "Week 1 Day 1\n(Pre-Dose)")# %>%
+
+  # filter(`Biomarker Test Name` == "Iron")
+
+ggplot(data, aes(x = `Analysis Visit`, y = `Biomarker normalized to baseline`, fill = `Description of Planned Arm`)) +
+  geom_boxplot(alpha = 0.2, outlier.alpha = 0) + 
+  geom_point(size = 1, position = position_jitterdodge(jitter.width = 0.2), aes(col = `Description of Planned Arm`)) +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  facet_wrap(.~`Biomarker Test Name`, scales = "free_y") +
+  stat_compare_means(method = "wilcox.test", label = "p.signif") # method = "t.test", 
+
+```
+
+## Toxicology bone paramters
+
+```{r}
+raw.data2 = openxlsx::read.xlsx("Input/20230220 Comparative Toxicologies Bone Parameters.xlsx")
+
+
+
+```

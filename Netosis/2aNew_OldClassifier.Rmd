@@ -1,0 +1,118 @@
+---
+title: "2New_DeepLearning_FirstClassification"
+author: "Thijs (Mattheus) Wildschut"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Built with R version `r getRversion()`
+
+# ```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+# setwd("C:/Users/mwildschut/OneDrive - CSL Behring/Documents/R/Projects/R_CSL-Vifor_TW/Netosis")
+# source("../SourceFile_TW.R")
+# ```
+
+## Preprocessing
+```{r Library and Setup}
+knitr::opts_chunk$set(echo = TRUE)
+suppressWarnings(suppressPackageStartupMessages({
+  library(reticulate)
+  library(imager) # Image manipulation
+  library(keras) # Deep learning
+  library(caret) # Model Evaluation
+  library(data.table)
+  library(Rtsne)
+  library(foreach)
+  library(ggalluvial)
+  library(magick)
+  library(tidyverse) # Data wrangling
+}))
+options(scipen = 999)
+use_condaenv("tf_image")
+# folder = "C:/Incucyte/Netosis/Netosis_Exp10/"
+# filename = "Netosis_Exp10_Classification_2023-08-07_09-54-14.csv"
+# folder = "C:/Incucyte/Netosis/Netosis_Exp13/"
+# filename = "Netosis_Exp13_RedOnly3_Classification_2023-08-10_15-51-16.csv"
+folder = "C:/Incucyte/Netosis/Netosis_Exp26/"
+exp_name = str_extract(folder, "Exp[:digit:]{2}")
+# filename = "Netosis_Exp17_Classification_2023-08-22_10-44-39.csv"
+# crop.size = 50
+# save.crops = TRUE
+# train.model = TRUE
+# save.plots = TRUE
+raw_folder = paste0(folder, "Raw_Images/")
+# folder_cleanup = paste0(folder, "CNN_CleanUp/")
+# folder_cleanup2 = paste0(folder, "CNN_SecondCleanUp/")
+# filename2 = "Netosis_Exp17_CleanUpClassification2_2023-08-29_14-34-21.csv"
+# folder_class = paste0(folder, "CNN_CellType/")
+# tensorflow::install_tensorflow(envname = "tf_image", extra_packages = "pillow")
+# py_install("scipy", envname = "tf_image")
+
+```
+<hr style="border:1px solid gray"></hr>
+
+## Classify using SecondLiveDead and  Exp17
+```{r Save all cell crops}
+folder_model_c2 = "C:/Incucyte/Netosis/Netosis_Exp17/CNN_SecondCleanUp/Models/"
+weights_path = list.files(folder_model_c2, pattern = ".hdf5", full.names = TRUE)
+model_big_cleanup2 = load_model_tf(weights_path[length(weights_path)])
+
+folder_model = "C:/Incucyte/Netosis/Netosis_Exp17/CNN_CellType/Models2"
+weights_path = list.files(folder_model, pattern = ".hdf5", full.names = TRUE)
+model_big = load_model_tf(weights_path[length(weights_path)])
+
+folder_classify = paste0(folder, "Classification/")
+raw_folder = paste0(folder, "Raw_Images/")
+n_crops = 5000 #how many randomly selected cells will be classified?
+
+data_list = fread(paste0(folder, "Classification/Netosis_", exp_name, "_Classification.csv")) %>%
+  dplyr::mutate(Filename = paste(Filename2, ObjectNumber, sep = "-"),
+                Phase = paste0(raw_folder, paste("Netosis", exp_name, "Phase", Filename2, sep = "_"), ".png"),
+                Green = paste0(raw_folder, paste("Netosis", exp_name, "Green", Filename2, sep = "_"), ".png"),
+                Red = paste0(raw_folder, paste("Netosis", exp_name, "Red", Filename2, sep = "_"), ".png"),
+                X = ifelse(floor(X) == 0, 1, floor(X)),
+                Y = ifelse(floor(Y) == 0, 1, floor(Y))) %>%
+  # filter(Filename %in% str_remove_all(val_data$file_paths, ".*Exp17_|.png")) %>%
+  # filter(Filename == "A9_2_00d04h30m-92") %>%
+  dplyr::select(Filename, Filename2, Phase, Green, Red, X, Y) %>% transpose %>% as.list
+
+n.cores <- parallel::detectCores() - 1
+doSNOW::registerDoSNOW(cl = snow::makeSOCKcluster(n.cores))
+progress <- function(n) setTxtProgressBar(txtProgressBar(max = n_crops, style = 3), n) #length(data_list)
+opts <- list(progress = progress)
+
+ser_model = keras::serialize_model(model_big)
+ser_model_cleanup2 = keras::serialize_model(model_big_cleanup2)
+
+img.comb = array(dim = c(1,936,1264,3), dimnames = list(NULL, NULL, NULL, c("Phase", "Green", "Red")))
+# for(i in 1:8){
+pred_test = foreach(x = data_list[sample.int(length(data_list), n_crops)], .combine = rbind.data.frame, .multicombine = TRUE, 
+                      .options.snow = opts, .packages = "keras") %dopar% {
+    # x = as.data.frame(data_list[1])
+    for(channel in c("Phase", "Green", "Red")){
+      img.comb[,,,channel] = image_to_array(image_load(x[[channel]], color_mode = "grayscale"))
+    }
+    img.crop = img.comb[, x$Y:(x$Y+49), x$X:(x$X+49), , drop = FALSE]
+    # image_array_save(img.crop[1,,,], paste0(folder_class, "Trial_Crop.png"))
+    c(x$Filename, 
+      predict(unserialize_model(ser_model_cleanup2), img.crop),
+      predict(unserialize_model(ser_model), img.crop))
+}
+pred_test2 = pred_test %>%
+  `colnames<-`(c("Filename", "Cell", "NoCell", "Adherent", "Flat", "NET", "Round")) %>%
+  mutate(across(.cols = -Filename, .fns = as.numeric)) %>%
+  rowwise %>% dplyr::mutate(LiveDead = c("Cell", "NoCell")[which(c(Cell, NoCell) == max(c(Cell, NoCell)))],
+                            CellType = c("Adherent", "Flat", "NET", "Round")[which(c(Adherent, Flat, NET, Round) == max(c(Adherent, Flat, NET, Round)))])
+
+data = fread(paste0(folder, "Classification/Netosis_", exp_name, "_Classification.csv")) %>%
+  dplyr::mutate(Filename = paste(Filename2, ObjectNumber, sep = "-"),
+                LiveDead = pred_test2$LiveDead[match(Filename, pred_test2$Filename)],
+                CellType = pred_test2$CellType[match(Filename, pred_test2$Filename)],
+                LiveDead2 = as.character(NA), 
+                CellType2 = as.character(NA)) %>%
+  dplyr::select(-V1, -Class, -Class2)
+
+write.table(data, paste0(folder_classify, "Netosis_", exp_name, "_Prediction.csv"), sep = ",", row.names = FALSE)
+
+```

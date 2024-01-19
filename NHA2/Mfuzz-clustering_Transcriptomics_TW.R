@@ -1,11 +1,11 @@
 ## Data loading
-setwd("C:\\Users\\mwildschut\\OneDrive - Vifor Pharma AG\\Documents\\R\\Projects\\R_CSL-Vifor_TW")
+setwd("C:\\Users\\mwildschut\\OneDrive - CSL Behring\\Documents\\R\\Projects\\R_CSL-Vifor_TW")
 source("SourceFile_TW.R")
 
 dataset = "GSE7869"
 gse = getGEO(dataset, GSEMatrix = TRUE)[[1]]
 
-uniprot = fread("Input\\Uniprot_HumanProteome_28-02-23.tsv")
+uniprot = fread("Other\\Input\\Uniprot_HumanProteome_28-02-23.tsv")
 annot = gse@featureData@data
 raw.data = gse@assayData$exprs[annot$`Gene Symbol` != "" & !str_detect(annot$`Gene Symbol`, "-| ///|\\."),]
                                # & annot$`Gene Symbol` %in% uniprot$`Gene Names (primary)`,]
