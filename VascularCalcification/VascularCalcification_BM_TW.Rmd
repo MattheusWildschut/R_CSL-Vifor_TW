@@ -9,7 +9,11 @@ Built with R version `r getRversion()`
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
-source("../SourceFile_TW.R")
+# source("../SourceFile_TW.R")
+library(tidyverse)
+library(patchwork)
+options(bitmapType='cairo')
+
 ```
 
 ## Biomarkers clinical study
@@ -48,9 +52,26 @@ ggplot(data, aes(x = `Analysis Visit`, y = `Biomarker normalized to baseline`, f
 
 ## Toxicology bone paramters
 
-```{r}
-raw.data2 = openxlsx::read.xlsx("Input/20230220 Comparative Toxicologies Bone Parameters.xlsx")
-
-
+```{r, fig.width=6.5, fig.height=7}
+raw.data2 = readxl::read_excel("Input/20230220 Comparative Toxicologies Bone Parameters.xlsx")
+plot.data = raw.data2 %>%
+  filter(!is.na(N)) %>%
+  mutate(Species2 = paste0(Species, "-", Sex, "(N=", N, ")"),
+         `Urine Ca (mg/dL)` = as.numeric(`Urine Ca (mg/dL)`),
+         `Dose (mg/kg)` = as.factor(`Dose (mg/kg)`),
+         Duration = factor(Duration, levels = unique(raw.data2$Duration)[c(2,1,6,3,4,7,8,5)])) %>%
+  filter(Compound == "INS-3001")
+plot_function = function(fill_var){
+  ggplot(plot.data, aes(x = Duration, y = `Dose (mg/kg)`, fill = .data[[fill_var]], col = Sex, label = N)) +
+    geom_tile(lwd = 0.5, width = 0.4, position = position_nudge(x = ifelse(plot.data$Sex == "Male", 0.22, -0.22))) +
+    geom_text(position = position_nudge(x = ifelse(plot.data$Sex == "Male", 0.21, -0.21)), size = 3) +
+    facet_grid(.~Species, scales = "free", space = "free") +
+    scale_fill_viridis() +
+    labs(x = NULL, y = "Dose (mg/kg daily s.c.)") +
+    theme_bw() + theme(axis.text.x = element_text(angle = 90), panel.grid = element_blank(), panel.grid.major.x = element_line(color = "grey"))
+}
+plot_function("Urine Ca (mg/dL)") / plot_function("Plasma Ca (mg/dL)") + plot_layout(guides = "collect")
+  
+ggsave("Output/CaLevels_INS-3001.pdf", width = 6.5, height = 7)
 
 ```
