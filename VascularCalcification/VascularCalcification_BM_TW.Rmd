@@ -19,7 +19,7 @@ options(bitmapType='cairo')
 ## Biomarkers clinical study
 
 ```{r, fig.width=18, fig.height=11}
-raw.data = fread("Input/biomarkers.csv")
+raw.data = data.table::fread("Input/biomarkers.csv")
 unique(paste0(raw.data$`Analysis Visit`, "\n(", raw.data$`Planned Time Point Name`, ")"))
 unique(raw.data$`Biomarker Test Name`)
 
@@ -46,32 +46,78 @@ ggplot(data, aes(x = `Analysis Visit`, y = `Biomarker normalized to baseline`, f
   geom_point(size = 1, position = position_jitterdodge(jitter.width = 0.2), aes(col = `Description of Planned Arm`)) +
   theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
   facet_wrap(.~`Biomarker Test Name`, scales = "free_y") +
-  stat_compare_means(method = "wilcox.test", label = "p.signif") # method = "t.test", 
+  ggpubr::stat_compare_means(method = "wilcox.test", label = "p.signif") # method = "t.test", 
 
 ```
 
 ## Toxicology bone paramters
 
-```{r, fig.width=6.5, fig.height=7}
-raw.data2 = readxl::read_excel("Input/20230220 Comparative Toxicologies Bone Parameters.xlsx")
-plot.data = raw.data2 %>%
+```{r, fig.width=7, fig.height=7}
+raw.data2 = readxl::read_excel("Input/20230220 Comparative Toxicologies Bone Parameters_TW.xlsx")
+data2 = raw.data2 %>%
   filter(!is.na(N)) %>%
   mutate(Species2 = paste0(Species, "-", Sex, "(N=", N, ")"),
          `Urine Ca (mg/dL)` = as.numeric(`Urine Ca (mg/dL)`),
-         `Dose (mg/kg)` = as.factor(`Dose (mg/kg)`),
-         Duration = factor(Duration, levels = unique(raw.data2$Duration)[c(2,1,6,3,4,7,8,5)])) %>%
+         Dose2 = as.factor(`Dose (mg/kg)`),
+         Duration = factor(Duration, levels = unique(raw.data2$Duration)[c(2,1,6,3,4,7,8,5)]),
+         Dur_num = str_remove(Duration, " days|-week| months"),
+         Day = ifelse(!is.na(Day), Day, 
+                      ifelse(str_detect(Duration, " days"), as.numeric(str_remove(Duration, " days")),
+                             ifelse(str_detect(Duration, "-week"), as.numeric(str_remove(Duration, "-week"))*7,
+                                    ifelse(str_detect(Duration, " months"), as.numeric(str_remove(Duration, " months"))*30, NA)))),
+         Day2 = as.factor(Day)) %>%
   filter(Compound == "INS-3001")
-plot_function = function(fill_var){
-  ggplot(plot.data, aes(x = Duration, y = `Dose (mg/kg)`, fill = .data[[fill_var]], col = Sex, label = N)) +
-    geom_tile(lwd = 0.5, width = 0.4, position = position_nudge(x = ifelse(plot.data$Sex == "Male", 0.22, -0.22))) +
-    geom_text(position = position_nudge(x = ifelse(plot.data$Sex == "Male", 0.21, -0.21)), size = 3) +
+data.sum2 = data2 %>%
+  group_by(Species, Sex, Day2, Dose2) %>% 
+  summarise(N = sum(N),
+            across(is.numeric, ~mean(.x, na.rm = TRUE)))
+plot_function = function(species, fill_var){
+  ggplot(data.sum2 %>% filter(Species == species), aes(x = Day2, y = Dose2, fill = .data[[fill_var]], col = Sex, label = N)) +
+    geom_tile(lwd = 0.5, width = 0.4, position = position_nudge(x = ifelse(data.sum2$Sex == "Male", 0.22, -0.22))) +
+    geom_text(position = position_nudge(x = ifelse(data.sum2$Sex == "Male", 0.21, -0.21)), size = 3) +
     facet_grid(.~Species, scales = "free", space = "free") +
-    scale_fill_viridis() +
+    scale_fill_viridis_c(na.value = "white") +
     labs(x = NULL, y = "Dose (mg/kg daily s.c.)") +
     theme_bw() + theme(axis.text.x = element_text(angle = 90), panel.grid = element_blank(), panel.grid.major.x = element_line(color = "grey"))
 }
-plot_function("Urine Ca (mg/dL)") / plot_function("Plasma Ca (mg/dL)") + plot_layout(guides = "collect")
+plot_function("Dog", "Urine Ca (mg/dL)") + plot_function("Rat", "Urine Ca (mg/dL)") + plot_layout(guides = "collect")
   
 ggsave("Output/CaLevels_INS-3001.pdf", width = 6.5, height = 7)
+
+```
+
+### Line plot
+```{r, fig.width=7, fig.height=4}
+# plot_function = function(fill_var){
+#   ggplot(data.sum2, aes(x = Day, y = `Dose (mg/kg)`, fill = .data[[fill_var]], col = Sex, label = N)) +
+#     geom_tile(lwd = 0.5, width = 0.4, position = position_nudge(x = ifelse(data.sum2$Sex == "Male", 0.22, -0.22))) +
+#     geom_text(position = position_nudge(x = ifelse(data.sum2$Sex == "Male", 0.21, -0.21)), size = 3) +
+#     facet_grid(.~Species, scales = "free", space = "free") +
+#     scale_fill_viridis_c(na.value = "white") +
+#     labs(x = NULL, y = "Dose (mg/kg daily s.c.)") +
+#     theme_bw() + theme(axis.text.x = element_text(angle = 90), panel.grid = element_blank(), panel.grid.major.x = element_line(color = "grey"))
+# }
+# plot_function("Urine Ca (mg/dL)") / plot_function("Serum Ca (mg/dL)")
+
+data.sum2 = data2 %>%
+  group_by(Species, Sex, Duration, Day2, Dose2) %>% 
+  summarise(N = sum(N),
+            across(is.numeric, ~mean(.x, na.rm = TRUE)))
+
+data.plot = data.sum2 %>%
+  mutate(Dose3 = ifelse(`Dose (mg/kg)` == 30.5, 30, ifelse(`Dose (mg/kg)` == 104, 100, ifelse(`Dose (mg/kg)` == 304, 300, `Dose (mg/kg)`))))
+data.plot = data.plot %>%
+  mutate(Dose3 = factor(Dose3, levels = sort(unique(data.plot$Dose3))))
+
+plotly::ggplotly(ggplot(data.plot, aes(x = Day, y = `Urine Ca (mg/dL)`, col = Dose2, label = N)) + #interaction(Dose2, Duration)
+  # geom_hline(yintercept = min(data.plot$`Urine Ca (mg/dL)`, na.rm = TRUE), linetype = 2, col = "grey") +
+  geom_line(aes(grouping = Dose2)) + geom_point(alpha = 0.8, aes(text = Duration)) +
+  # geom_text(position = position_nudge(x = ifelse(data.sum2$Sex == "Male", 0.21, -0.21)), size = 3) +
+  facet_grid(Species~Sex, scales = "free", space = "free") +
+  scale_color_viridis_d(name = "Dose\n(mg/kg daily s.c.)") +
+  # guides(color = guide_legend()) +
+# labs(color = "Dose\n(mg/kg daily s.c.)") +
+  theme_bw(), #+ theme(axis.text.x = element_text(angle = 90), panel.grid = element_blank(), panel.grid.major.x = element_line(color = "grey"))
+)
 
 ```
